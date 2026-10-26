@@ -1,0 +1,341 @@
+# THE COMMAND A CUSTOMER CAN ACTUALLY TYPE.
+#
+# `release.yml` builds and publishes archives to this repository's release page, and that page is the ARTIFACT SOURCE
+# of the package, not a download: this workflow is what turns it into the command a customer runs. The bytes published here are the bytes from that release,
+# downloaded and repackaged, never a second build of the same source: two builds of one tag is the defect this
+# repository has spent a slice removing.
+#
+# ⚠️ AND THE RELEASE MUST BE WHAT RELEASE.YML BUILT. Anything that can write a release's assets could swap an
+# archive, and the checks below only asked the linux binary questions a swapped one can answer; the two macOS binaries
+# were never looked at. So before anything is unpacked or run, every archive on the release must be, byte for byte, the
+# one the successful run of release.yml at the tag's commit kept as an artifact. That run's artifacts are kept 90 days
+# by default: publish a release within that time, or cut a new tag.
+#
+# ⚠️ EVERY ACTION IS NAMED BY ITS COMMIT, NOT ITS TAG — see release.yml.
+#
+# ⚠️ NOTHING HERE FIRES ON ITS OWN. `workflow_dispatch` and nothing else — no `push`, no `tags:`, no `release:`.
+# A published npm name cannot be withdrawn, only deprecated, so the gate is a person choosing to run this and
+# typing the name back. Adding a trigger to this file is publishing a name; a seal in cmd/nth-agent refuses any
+# trigger but this one.
+#
+# ⚠️ THE PACKAGE NAME IS DECIDED, AND THIS BLOCK USED TO SAY IT WAS NOT. Three sentences stood here — "THE
+# NAME IS NOT DECIDED", "`publish/npm/package.json` carries `nth-agent`", "the operator has not chosen the npm
+# name" — and all three were false. Commit 8fe743d (2026-09-18) chose the name and rewrote the comments around
+# it mechanically (`qanguru-agent` → `nth-agent`) while the real decision went into package.json as
+# **nthcase-agent**. Anybody reading this file before dispatching it typed `nth-agent` into `confirm_name` below
+# and was refused: the gate worked, the document lied. THE PACKAGE IS `nthcase-agent` AND THE COMMAND IT
+# INSTALLS IS `nth-agent` — two different strings on purpose, held equal to their own sources by
+# TestTheCommandKeyEqualsTheDirectoryUnderCmd here and by the sibling seal in the web app. Read `confirm_name`
+# off package.json, never off a comment — including this one.
+#
+# ⚠️ THE CREDENTIAL, AND WHICH PUBLISH YOU ARE IN. **Every npm credential of the old CI kind was permanently
+# revoked on 2025-12-09**, and creating them was disabled on 2025-11-05; they cannot be recreated. The
+# instruction that stood here named exactly that kind, as the repository secret `NPM_TOKEN`, and sent whoever
+# read it to a screen in npm's UI that no longer offers the thing. It is DESCRIBED rather than quoted, because
+# the seal that keeps it from coming back (TestNoInstructionNamesACredentialNpmDestroyed) matches on the words
+# themselves — and a seal with an exemption for "but this occurrence is only a quotation" is the hole it exists
+# to close. There are now two cases and a reader is in exactly one of them:
+#
+#   1. THE FIRST PUBLISH, which trusted publishing cannot do: npm's own `npm trust` page states "The package
+#      you're configuring must already exist on the npm registry" (npm/cli#8544 is open; first-publish was left
+#      out of the MVP). So the first publish uses a short-lived **granular access token**, scoped to this one
+#      package with read+write, set as the repository secret `NPM_TOKEN`, and REVOKED as soon as it has run.
+#   2. EVERY PUBLISH AFTER IT, which uses **trusted publishing (OIDC)**: the trusted publisher is configured on
+#      npmjs.com against this repository and this workflow file, `id-token: write` is granted on the job below,
+#      and there is NO STORED SECRET at all. A `NODE_AUTH_TOKEN` that is empty is the ordinary state of case 2.
+#
+# Nothing in this repository creates either credential and nothing should — both are minted in npm's own UI by
+# whoever owns the account. Until case 1 has been done once, this workflow fails at the publish step, which is
+# the correct behaviour for a workflow whose only job is to publish.
+#
+# ⚠️ WHY THE NODE FLOOR MOVED. OIDC needs npm ≥ 11.5.1, which needs Node ≥ 22.14; this file pinned Node 22,
+# whose setup-node bundle is npm 10.x, which cannot speak the protocol at all. (The old pin is described and not
+# written out: the floor seal reads the pin the RUNNER acts on, and a comment shaped like one is how that parse
+# went wrong the first time it was written.) A
+# publish that cannot authenticate is answered **404 by the registry**, which reads as a missing package and is
+# in fact a missing identity — so the first person to debug it would have gone looking at the name. Node 24
+# bundles npm 11.x, and the step below asserts the floor rather than trusting the bundle.
+#
+# If the name is ever scoped (`@scope/nth-agent`), `publishConfig.access: "public"` in package.json is what
+# stops npm defaulting a scoped package to restricted — it is already there, which is the same thing
+# `TestSprite/testsprite-cli/package.json` does for `@testsprite/testsprite-cli`.
+
+name: publish-npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag whose binaries get published (e.g. v0.1.0). Its assets are the bytes."
+        required: true
+        type: string
+      confirm_name:
+        description: "Type the package name exactly, from publish/npm/package.json. This cannot be undone."
+        required: true
+        type: string
+
+permissions:
+  contents: read # to download the release assets built by release.yml — nothing here writes to the repository
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # THE PERMISSION IS FOR AUTHENTICATION, NOT PROVENANCE, AND THOSE ARE DIFFERENT THINGS THAT NEED THE SAME
+    # GRANT. `id-token: write` lets the runner mint the OIDC token trusted publishing exchanges for a registry
+    # credential — which works whether the source repository is public or not. Provenance ALSO needs this permission
+    # and something else on top: a public source repository ("Provenance generation is not supported for private
+    # repositories, even when publishing public packages", docs.npmjs.com/trusted-publishers) whose address the
+    # package names. So the grant is here and `--provenance` is still absent, and a seal holds both halves.
+    permissions:
+      actions: read # to download the archives release.yml's run kept, which an edit of the release cannot reach
+      contents: read # to download the release assets built by release.yml — nothing here writes to the repository
+      id-token: write # to mint the OIDC token trusted publishing exchanges; NOT a provenance claim — see above
+    steps:
+      # ⚠️ THE TAG'S OWN TREE, NOT THE BRANCH THE BUTTON WAS PRESSED ON. Everything this package ships besides the binaries
+      # — the README a customer reads on npmjs.com, CHANGELOG.md, THIRD_PARTY_NOTICES.txt, the shim, the manifest — is read
+      # from this checkout, and the binaries are the tag's. A dispatch from main after main moved on used to pair one
+      # tag's binaries with another commit's README; now every file in the package is the tag's. `refs/tags/` so a branch
+      # with the tag's name can never be what is checked out: the commit here is the one the archives are checked against.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      # THE FLOOR, ASSERTED RATHER THAN ASSUMED. Node 24 bundles npm 11.x today; which npm a Node release bundles
+      # is setup-node's business and not ours, so the version that trusted publishing actually needs is checked
+      # here, where the runner reads it, instead of being left in a comment that a bundle change would silently
+      # falsify. Below 11.5.1 the OIDC exchange does not exist and `npm publish` fails as a 404 from the registry
+      # — an error about the NAME, for a problem with the IDENTITY, which is the worst kind to hand somebody.
+      - name: npm must be new enough to authenticate
+        run: |
+          set -euo pipefail
+          REQUIRED="11.5.1"   # npm's stated floor for trusted publishing (OIDC)
+          HAVE="$(npm --version)"
+          echo "npm: $HAVE (need >= $REQUIRED)"
+          if [ "$(printf '%s\n%s\n' "$REQUIRED" "$HAVE" | sort -V | head -n1)" != "$REQUIRED" ]; then
+            echo "refusing: npm $HAVE cannot use trusted publishing; npm >= $REQUIRED is required." >&2
+            echo "Raise node-version, or install npm explicitly before this step." >&2
+            exit 1
+          fi
+
+      # THE GATE. The name is read out of the package rather than typed here, so this compares the person's
+      # intention against the file that will actually be published. A typo, a stale memory of the old name, or
+      # somebody running this to "see what happens" all stop here, before anything reaches the registry.
+      - name: Confirm the name
+        run: |
+          set -euo pipefail
+          NAME="$(node -p "require('./publish/npm/package.json').name")"
+          if [ "${{ inputs.confirm_name }}" != "$NAME" ]; then
+            echo "refusing: you typed '${{ inputs.confirm_name }}' and the package is named '$NAME'." >&2
+            echo "A published npm name cannot be withdrawn, so this workflow will not guess at your intent." >&2
+            exit 1
+          fi
+          echo "publishing as: $NAME"
+
+      # ONE SOURCE FOR THE VERSION: THE TAG. The Go binary was stamped from it by release.yml
+      # (-X main.version=${GITHUB_REF_NAME}), and the npm package is stamped from the same string here. npm
+      # versions are semver and carry no leading `v`, so there are two spellings of one fact — which is exactly
+      # the shape that rots — and the relationship is written down and then CHECKED against the binary itself
+      # further down rather than assumed.
+      - name: Fetch the release built by release.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          mkdir -p dist
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir dist --pattern '*.tar.gz' --pattern 'THIRD_PARTY_NOTICES.txt'
+
+      # ⚠️ THE RELEASE'S ARCHIVES ARE THE ONES RELEASE.YML BUILT FROM THE TAG. The run of release.yml that built the
+      # tag's commit kept each archive as an artifact, which nothing that edits the release can reach. Every archive on the
+      # release must be one of them, byte for byte, and every one of them must be on the release, before anything below
+      # unpacks, runs or publishes a binary. Checking SHA256SUMS would not do: it is one more asset of the same release.
+      - name: The release's archives are the ones release.yml built from the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          COMMIT="$(git rev-parse HEAD)"
+          RUN="$(gh api "repos/${{ github.repository }}/actions/workflows/release.yml/runs?event=push&status=success&head_sha=$COMMIT&per_page=100" \
+            --jq "[.workflow_runs[] | select(.head_sha == \"$COMMIT\" and .head_branch == \"$TAG\" and .conclusion == \"success\") | .id] | max // empty")"
+          if [ -z "$RUN" ]; then
+            echo "refusing: no successful run of release.yml built $TAG at $COMMIT, so its archives cannot be checked against what was built." >&2
+            exit 1
+          fi
+          mkdir -p built
+          if ! gh run download "$RUN" --repo "${{ github.repository }}" --dir built; then
+            echo "refusing: the archives release.yml run $RUN kept could not be downloaded (a run keeps its artifacts 90 days by default)." >&2
+            echo "Cut a new tag; its release run keeps a fresh set." >&2
+            exit 1
+          fi
+          problems=0
+          checked=0
+          for archive in dist/*.tar.gz; do
+            [ -f "$archive" ] || continue
+            name="$(basename "$archive")"
+            matches="$(find built -type f -name "$name" | wc -l | tr -d ' ')"
+            if [ "$matches" != "1" ]; then
+              echo "refusing: release $TAG has $name, and release.yml run $RUN did not build it." >&2
+              problems=1
+              continue
+            fi
+            if ! cmp -s "$(find built -type f -name "$name")" "$archive"; then
+              echo "refusing: release $TAG's $name is not the one release.yml run $RUN built." >&2
+              problems=1
+              continue
+            fi
+            checked=$((checked + 1))
+          done
+          while IFS= read -r kept; do
+            if [ ! -f "dist/$(basename "$kept")" ]; then
+              echo "refusing: release.yml run $RUN built $(basename "$kept"), and release $TAG does not carry it." >&2
+              problems=1
+            fi
+          done < <(find built -type f -name '*.tar.gz')
+          if [ "$checked" -eq 0 ]; then
+            echo "refusing: release $TAG carries no archive that release.yml run $RUN built." >&2
+            problems=1
+          fi
+          if [ "$problems" -ne 0 ]; then
+            exit 1
+          fi
+          echo "every archive on release $TAG is the one release.yml run $RUN built from $COMMIT ($checked checked)"
+
+      - name: Unpack the binaries
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          mkdir -p publish/npm/bin
+          for goos_goarch in darwin_arm64 darwin_amd64 linux_amd64; do
+            archive="dist/nth-agent_${TAG}_${goos_goarch}.tar.gz"
+            test -f "$archive" || { echo "release $TAG has no asset $archive" >&2; exit 1; }
+            tar -xzf "$archive" -C dist nth-agent
+            mv dist/nth-agent "publish/npm/bin/nth-agent-${goos_goarch//_/-}"
+          done
+          # upload-artifact and tar round-trips do not reliably preserve the executable bit; npm packs the mode
+          # it finds, so a package whose binaries are not executable installs fine and fails at the first run.
+          chmod +x publish/npm/bin/*
+          ls -l publish/npm/bin
+
+      # ⚠️ THE NOTICES AND THE CHANGELOG GO IN THE PACKAGE (AN_AGENT_THAT_SHIPS_ITS_NOTICES). The licences of the code inside
+      # these binaries ask for their notices with every copy, and an npm install IS a copy, so a package without them is
+      # not published: the release must carry THIRD_PARTY_NOTICES.txt beside its archives (a release cut before the
+      # notices existed cannot be published as it is — cut a new tag), and it must be the tag's own file, byte for byte.
+      # CHANGELOG.md comes from the tag's tree; release.yml already refused a tag with no section of its own.
+      # LICENSE and NOTICE come from the tag's tree too (AN_AGENT_READY_TO_BE_READ): the agent's own code is under the
+      # Apache License 2.0, which asks for both with every copy, and a tag without them is refused like one without notices.
+      - name: Put the notices and the changelog in the package
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          if [ ! -f dist/THIRD_PARTY_NOTICES.txt ]; then
+            echo "refusing: release $TAG carries no THIRD_PARTY_NOTICES.txt beside its archives." >&2
+            echo "The licences of the code inside its binaries ask for their notices with every copy; cut a new tag." >&2
+            exit 1
+          fi
+          if ! cmp -s dist/THIRD_PARTY_NOTICES.txt THIRD_PARTY_NOTICES.txt; then
+            echo "refusing: the THIRD_PARTY_NOTICES.txt on release $TAG is not the one in the tag's tree." >&2
+            echo "The release was built from another commit than the tag names now; cut a new tag." >&2
+            exit 1
+          fi
+          test -f CHANGELOG.md || { echo "refusing: the tag's tree has no CHANGELOG.md to ship." >&2; exit 1; }
+          for f in LICENSE NOTICE; do
+            test -f "$f" || { echo "refusing: the tag's tree has no $f to ship; the package carries its own licence." >&2; exit 1; }
+          done
+          cp THIRD_PARTY_NOTICES.txt CHANGELOG.md LICENSE NOTICE publish/npm/
+          ls -l publish/npm
+
+      # ⚠️ THE README THAT SHIPS IS CUT, NOT COPIED. `publish/npm/package.json` ships README.md, so this file IS
+      # the page npmjs.com renders for the package — and its last sixty lines were ours: the internal release
+      # page, the cross-repository seal architecture, which script runs them, and a recounting of a seal that was
+      # red for three slices. A customer who clicked through to install an agent was handed the company's
+      # engineering narrative. The cut is DERIVED from a marker in the file rather than from a line number here,
+      # because a line number is a second place the boundary lives and the file moves every slice.
+      #
+      # ⚠️ AND A README WITH NO MARKER FAILS THE PUBLISH. Shipping whole is the exact behaviour being removed,
+      # so the absence of the boundary must stop the run, not fall back to copying everything.
+      #
+      # ⚠️ THE TOKENS ARE SUBSTITUTED HERE, which is what makes them derived. The pin example used to read
+      # `npx nth-agent@1.4.0` — a package that does not exist and a version nobody ever published, produced when
+      # 8fe743d rewrote the old name mechanically and the example came loose from both. The name now comes from
+      # package.json and the version from the tag being published, so neither can drift from what is shipping.
+      - name: Cut the customer half of the README and stamp the package
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          MARKER="<!-- NOT-FOR-THE-REGISTRY -->"
+          if ! grep -qF "$MARKER" README.md; then
+            echo "refusing: README.md carries no $MARKER boundary." >&2
+            echo "Everything below that marker is internal and must not reach npmjs.com; without it this step" >&2
+            echo "cannot tell the customer half from ours, and shipping the file whole is the defect it removes." >&2
+            exit 1
+          fi
+          NAME="$(node -p "require('./publish/npm/package.json').name")"
+          awk -v m="$MARKER" 'index($0, m) { exit } { print }' README.md             | sed -e "s|{{PACKAGE}}|$NAME|g" -e "s|{{VERSION}}|${TAG#v}|g" > publish/npm/README.md
+          if grep -qE '\{\{(PACKAGE|VERSION)\}\}' publish/npm/README.md; then
+            echo "refusing: a {{…}} token survived substitution in the README about to be published." >&2
+            exit 1
+          fi
+          echo "README: $(wc -l < README.md) lines in the tree, $(wc -l < publish/npm/README.md) shipped"
+          cd publish/npm
+          npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+
+      # ⚠️ THE CHECK THAT MAKES THE TWO SPELLINGS ONE FACT. The published package's version and the version its
+      # binary prints answer the same customer question — *which one am I running?* — and nothing but this step
+      # stops them drifting. The linux binary is the one this runner can execute, so it is the one that answers.
+      # A mismatch here is a refusal, not a warning: a package that lies about its own version is worse than no
+      # package, because the customer's next bug report describes a build that does not exist.
+      - name: The binary must report the version the package claims
+        run: |
+          set -euo pipefail
+          cd publish/npm
+          PKG="$(node -p "require('./package.json').version")"
+          # ⚠️ THE LAST FIELD, NOT THE WHOLE LINE. `--version` prints "nth-agent v0.1.0" — the binary names
+          # itself first (cli.go), so comparing the whole line against the version could never match. Found by
+          # running it rather than reading it, which is the only way that class of mistake is ever found.
+          # ⚠️ AND THE FIRST LINE ONLY. Since 0.3.0 `--version` prints a second line, saying where the third-party notices
+          # are; an awk over every line returned two words here, and the comparison refused every publish.
+          BIN="$(./bin/nth-agent-linux-amd64 --version | awk 'NR == 1 {print $NF}')"
+          echo "package.json: $PKG"
+          echo "--version:    $BIN"
+          if [ "$BIN" != "v$PKG" ] && [ "$BIN" != "$PKG" ]; then
+            echo "refusing: the package says '$PKG' and the binary says '$BIN'." >&2
+            echo "These answer the same question and must not disagree — republish the release, or check that" >&2
+            echo "release.yml stamped -X main.version from the tag you are publishing." >&2
+            exit 1
+          fi
+
+      # ⚠️ ONE TEXT IN TWO PLACES, AND THEY MUST BE THE SAME. The package ships THIRD_PARTY_NOTICES.txt, and the binary
+      # carries its own copy for `nth-agent notices`. Both come from the tag, so they agree unless something went wrong
+      # between the release and here — and a package whose file and whose binary list different code is refused.
+      - name: The notices the package ships are the ones its binary carries
+        run: |
+          set -euo pipefail
+          cd publish/npm
+          if ! ./bin/nth-agent-linux-amd64 notices | cmp -s - THIRD_PARTY_NOTICES.txt; then
+            echo "refusing: \`nth-agent notices\` and the THIRD_PARTY_NOTICES.txt this package ships are not the same text." >&2
+            exit 1
+          fi
+          echo "THIRD_PARTY_NOTICES.txt is the text the binary prints."
+
+      # NO --provenance, AND THAT IS ESTABLISHED RATHER THAN ASSUMED. The flag needed two things this workflow does
+      # not have and one of them it cannot have: npm's own page requires `permissions: id-token: write` to mint the
+      # OIDC token (this file grants `contents: read` and nothing else, so the step would have failed before it
+      # reached npm), and "Provenance generation is not supported for private repositories, even when publishing
+      # public packages" (docs.npmjs.com/trusted-publishers, read 2026-09-02) — and this workflow was written in a
+      # repository that was private then. Provenance takes a public source repository with a matching `repository`
+      # field in package.json, plus the permission; until the package names the public repository it is published
+      # from, it is published without a statement it could not have made.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd publish/npm
+          npm publish

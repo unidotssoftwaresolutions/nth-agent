@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  # ⚠️ THE PUSH TRIGGER IS GONE, AND IT WAS REMOVED FOR COST — NOT BECAUSE IT WAS WRONG.
+  #
+  # WHAT WAS TRUE BEFORE, in this file's own words: "A direct push to main used to run NOTHING — only PRs were
+  # checked. Both triggers now, so main is never unverified." That reasoning was RIGHT and the gap it named was
+  # real; this is a trade, not a correction.
+  #
+  # WHAT IS TRUE NOW: this team merges DIRECTLY to main — PR-to-main has not been adopted, deliberately, to keep
+  # speed — so `push: branches: [main]` fired on essentially every commit, in FOUR repositories at once, and
+  # GitHub Actions credits were going faster than this stage of the product can justify. The operator decided on
+  # 2026-09-03 to buy the cost back at a known price.
+  #
+  # ⚠️ AND THE PRICE IS WRITTEN HERE SO NOBODY HAS TO REDISCOVER IT: MAIN IS NOW UNVERIFIED BETWEEN PRs. A direct
+  # commit to main runs nothing at all. What replaces the trigger is a PERSON: `workflow_dispatch` puts a "Run
+  # workflow" button on the Actions tab, and the rule is to press it on main before a deploy. That is weaker than
+  # a trigger and is meant to read as weaker — a reason that lives only in whoever decided it has no reader.
+  # PR-to-main, a nightly `schedule:`, or a pre-push hook would each make it safe again. None is built here.
+  workflow_dispatch:
+  # ⚠️ AND THE SENTENCE THAT USED TO STAND ABOVE THIS BLOCK IS GONE FOR THE SAME REASON: "push AND
+  # pull_request, matching the other three repos, so main is never unverified." All four repositories made the
+  # same trade on the same day, so they still match — on the new shape.
+  #
+  # This `pull_request:` carries NO `branches` and NO `types`, where the other three name both. That difference
+  # predates this slice and is not this slice's to resolve; it is recorded rather than tidied, because a trigger
+  # filter is a decision about which PRs get checked and changing it here would be a second change wearing this
+  # one's clothes.
+  pull_request:
+
+# ONE RUN PER WORKFLOW PER REF, and a superseded one stops instead of finishing.
+#
+# WHAT IT CANCELS: an earlier run for the SAME ref — a PR whose second push lands while the first run is still
+# going, or a second press of the Run workflow button on the same branch. Nobody is waiting on the verdict for a
+# commit that has already been replaced.
+#
+# ⚠️ WHAT IT DOES NOT CANCEL, said plainly so this does not read as a second cost lever quietly dropping results
+# somebody wanted: a run for a DIFFERENT ref is untouched. Two open PRs never cancel each other, and a dispatch
+# on main is not cancelled by a PR. The one case where an answer you may have wanted disappears is pressing the
+# button twice on the same ref — and there the second press is the one that answers.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# READ ONLY, AND EVERY ACTION NAMED BY ITS COMMIT. CI builds and tests; it writes nothing, so it asks for nothing
+# more than reading the tree, instead of the repository's default token. The SHAs are the commits the v4 and v5 tags
+# pointed at on 2026-10-20 — see release.yml.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          # ONE HOME for the Go version: go.mod. Nothing here to drift from it.
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./... -race
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      # The targets we compile are exactly the targets this repo may claim (see the platform-claims
+      # seal in internal/inventory). Windows is deliberately absent — when we add the target we add
+      # the sentence, not before.
+      - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...

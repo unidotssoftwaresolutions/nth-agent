@@ -1,0 +1,222 @@
+===== SixThings =====
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== ThePromise =====
+nth-agent never signs or re-signs your apps, and never touches your signing certificates or keychain. When you turn on network capture, it makes one certificate authority of its own, on this machine, used only to stand in for the servers the apps on your test phone talk to, so that their HTTPS can be read — and only in apps built to trust it. The agent never sends its private key anywhere and keeps it out of backups (a backup made before that, or by a tool that ignores it, may still hold a copy); it lasts one year, and you can remove it any time (npx nthcase-agent@latest capture disable, then delete the certificate on the phone).
+===== SharedMachine =====
+On a machine other people log into, the machine's administrator (root) could send traffic through the capture proxy while a capture runs; a connection from any other account is refused unread.
+===== EnableExplanation =====
+Network capture records your test app's network traffic during a run, so each request and response
+appears on the run's Network tab. It is off until you turn it on here, set up each phone, and a scenario asks for it.
+
+  - During a capture run the WHOLE PHONE's traffic — every app's, not only the one under test — goes through a proxy on
+    this machine and out through this machine's network. Use a test phone, not your daily one.
+  - Only apps built to trust user-installed certificates can be read — usually debug builds. A release build, or a host
+    an app pins, is not read: it is recorded once as "not readable" and then passed through untouched, so the phone's
+    own services keep working.
+  - Before anything leaves this machine it is masked here: the Authorization, Proxy-Authorization, Cookie and Set-Cookie
+    headers; any header, field or query parameter whose name says it holds a credential; and credential-shaped values
+    (JWTs, bearer and basic credentials, published API-key formats) — in compressed bodies too, which are decoded first.
+    A body this agent cannot read is left out entirely. We mask again when it arrives.
+  - What reaches us is the masked record, kept with the run for one hour. Nothing raw is ever kept on this machine: the
+    masked copy waits here only until your workspace pulls it, and is deleted then, or an hour after the capture stops.
+  - To read HTTPS, this agent makes one certificate authority of its own, here, valid for one year. The agent never sends
+    its private key anywhere, and keeps the capture folder out of backups: out of Time Machine on a Mac, and marked for
+    backup tools that honour CACHEDIR.TAG on Linux. A backup made before that, or by a tool that ignores it, may still
+    hold a copy of the key and of capture files; removing the certificate from every phone is what ends a copied key's
+    use. You install its certificate on each test phone yourself (npx nthcase-agent@latest capture setup).
+  - To turn it all off: npx nthcase-agent@latest capture disable. It hands every phone back, deletes the key and every capture file
+    on this machine, and says how to remove the certificate from each phone (on a Samsung, in both places it is listed).
+
+On a machine other people log into, the machine's administrator (root) could send traffic through the capture proxy while a capture runs; a connection from any other account is refused unread.
+
+nth-agent never signs or re-signs your apps, and never touches your signing certificates or keychain. When you turn on network capture, it makes one certificate authority of its own, on this machine, used only to stand in for the servers the apps on your test phone talk to, so that their HTTPS can be read — and only in apps built to trust it. The agent never sends its private key anywhere and keeps it out of backups (a backup made before that, or by a tool that ignores it, may still hold a copy); it lasts one year, and you can remove it any time (npx nthcase-agent@latest capture disable, then delete the certificate on the phone).
+===== ConfirmPrompt =====
+Type ENABLE to turn on network capture: 
+===== NotEnabled =====
+Nothing was changed — network capture stays off.
+===== Enabled =====
+Network capture is on for this machine. Its certificate authority is "NthCase agent CA — bench-mac", valid until 2027-10-04.
+Next, set up each test phone: npx nthcase-agent@latest capture setup [serial]
+If npx nthcase-agent connect is running it tells your workspace within about ten seconds; otherwise it does when it starts.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== AlreadyEnabled =====
+Network capture is already on for this machine. Its certificate authority is "NthCase agent CA — bench-mac", valid until 2027-10-04.
+Set up a phone with: npx nthcase-agent@latest capture setup [serial]
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== UnsupportedSystem =====
+Network capture runs on macOS and Linux only, and this machine is plan9: this agent cannot keep the capture key to you alone here, so it does not make one. Nothing was changed.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== SetupSteps Samsung =====
+Setting up phone R5CT30ABCDE (SM-A546B) for network capture.
+
+  1. The capture certificate is on the phone now, in Downloads, as nthcase-agent-ca.crt.
+  2. On the phone, open Settings → Security and privacy → More security settings → Install from device storage.
+  3. Choose "CA certificate", tap "Install anyway", then pick nthcase-agent-ca.crt.
+     (The names differ a little between Android versions: searching Settings for "CA certificate" finds the screen.)
+  4. If the phone has no screen lock yet, Android asks for one first — a PIN, a pattern or a password. Android will not
+     trust a certificate on a phone without one. Set it, then finish the install.
+
+Android does not let a computer install a certificate: this step is yours, on the phone.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+
+Press Enter here when the certificate is installed, and this agent checks that the phone trusts it.
+(Ctrl-C stops here. Only the certificate file was copied to the phone's Downloads; nothing else on it was changed.)
+===== SetupSteps stock Android =====
+Setting up phone 39051FDJH00ABC (Pixel 8) for network capture.
+
+  1. The capture certificate is on the phone now, in Downloads, as nthcase-agent-ca.crt.
+  2. On the phone, open Settings → Security & privacy → More security & privacy → Encryption & credentials →
+     Install a certificate → CA certificate, and tap "Install anyway".
+  3. Pick nthcase-agent-ca.crt.
+     (The names differ a little between Android versions: searching Settings for "CA certificate" finds the screen.)
+  4. If the phone has no screen lock yet, Android asks for one first — a PIN, a pattern or a password. Android will not
+     trust a certificate on a phone without one. Set it, then finish the install.
+
+Android does not let a computer install a certificate: this step is yours, on the phone.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+
+Press Enter here when the certificate is installed, and this agent checks that the phone trusts it.
+(Ctrl-C stops here. Only the certificate file was copied to the phone's Downloads; nothing else on it was changed.)
+===== TrustTrusted =====
+Phone R5CT30ABCDE is set up for network capture: its browser trusted the capture certificate.
+That proves the certificate is installed and trusted on the phone. It does not prove the app you test trusts it: only apps
+built to trust user certificates (usually debug builds) can be read, and a host an app pins is passed through unread.
+The phone's proxy setting was put back as it was.
+On the phone, the browser may still show a page from this check (trust-check.nthcase.invalid). It is the check's own page, and you can close that tab.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== TrustRefused =====
+Phone R5CT30ABCDE is NOT set up: its browser refused the capture certificate, so the certificate is not installed as
+a trusted CA on it. Go through the steps above, then run npx nthcase-agent@latest capture setup R5CT30ABCDE once more.
+If this is a work phone, your organisation may block installing certificates. Network capture needs a phone you can install a certificate on — use a dedicated test phone.
+The phone's proxy setting was put back as it was.
+On the phone, the browser may still show a "Your connection is not private" warning for trust-check.nthcase.invalid. That warning is this check itself — the phone's browser refusing the capture certificate, which is what the check found — not an attack, and you can close that tab.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== TrustNoAnswer =====
+Phone R5CT30ABCDE is NOT set up: the check never reached this machine. The phone's browser did not open the check
+page, the phone was locked, or its proxy setting did not take. Unlock the phone, keep it plugged in, and run
+npx nthcase-agent@latest capture setup R5CT30ABCDE once more.
+If this is a work phone, your organisation may block installing certificates. Network capture needs a phone you can install a certificate on — use a dedicated test phone.
+The phone's proxy setting was put back as it was.
+On the phone, the browser may show a page for trust-check.nthcase.invalid that could not be opened. It is this check's own page, and you can close that tab.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== TrustNoAnswer, the phone not put back =====
+Phone R5CT30ABCDE is NOT set up: the check never reached this machine. The phone's browser did not open the check
+page, the phone was locked, or its proxy setting did not take. Unlock the phone, keep it plugged in, and run
+npx nthcase-agent@latest capture setup R5CT30ABCDE once more.
+If this is a work phone, your organisation may block installing certificates. Network capture needs a phone you can install a certificate on — use a dedicated test phone.
+The phone's proxy setting could NOT be put back yet — what it is left with, and how to clear it, is above.
+On the phone, the browser may show a page for trust-check.nthcase.invalid that could not be opened. It is this check's own page, and you can close that tab.
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== Unreachable =====
+Phone R5CT30ABCDE still has its network proxy pointed at this machine's capture (127.0.0.1:41234), and it could not be cleared:
+the phone was not reachable over adb (unplugged, switched off, or no longer allowed USB debugging). Until it is cleared
+the phone has no working internet, because its proxy points at a capture that has stopped.
+Plug it back in, unlock it and allow USB debugging if it asks: while npx nthcase-agent connect runs it clears this within half a
+minute, and otherwise when it starts. Or clear it yourself now:  adb -s R5CT30ABCDE shell settings put global http_proxy :0
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== stillOwed =====
+Phone R5CT30ABCDE could not be handed back yet (the capture set its proxy to 127.0.0.1:41234): its global proxy still points at this machine's capture (127.0.0.1:41234) after it was cleared. While npx nthcase-agent connect runs it keeps trying; or clear the phone's proxy yourself now:  adb -s R5CT30ABCDE shell settings put global http_proxy :0
+===== DisableSummary clean =====
+Network capture is off for this machine.
+  - Handed back, with the proxy setting cleared: R5CT30ABCDE.
+  - The capture CA's key and certificate are deleted from this machine.
+  - Every capture file on this machine is deleted (2).
+  - Your workspace hears it within about ten seconds if npx nthcase-agent connect is running; otherwise when it starts.
+
+The capture certificate stays on each phone until you remove it there:
+  Samsung — it is listed in two places; remove it in both:
+    Settings → Security and privacy → More security settings → View security certificates → User: delete "NthCase agent CA — bench-mac".
+    Settings → Security and privacy → More security settings → User certificates: delete it there too.
+  Pixel and other Android phones:
+    Settings → Security & privacy → More security & privacy → Encryption & credentials → User credentials: remove "NthCase agent CA — bench-mac".
+  (The names differ a little between Android versions: searching Settings for "certificate" finds both screens.)
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== DisableSummary with phones owed =====
+Network capture is off for this machine.
+  - The capture CA's key and certificate are deleted from this machine.
+  - No capture file was left on this machine to delete.
+  - Your workspace hears it within about ten seconds if npx nthcase-agent connect is running; otherwise when it starts.
+
+NOT HANDED BACK YET — Phone R5CT30ABCDE still has its network proxy pointed at this machine's capture (127.0.0.1:41234), and it could not be cleared:
+the phone was not reachable over adb (unplugged, switched off, or no longer allowed USB debugging). Until it is cleared
+the phone has no working internet, because its proxy points at a capture that has stopped.
+Plug it back in, unlock it and allow USB debugging if it asks: while npx nthcase-agent connect runs it clears this within half a
+minute, and otherwise when it starts. Or clear it yourself now:  adb -s R5CT30ABCDE shell settings put global http_proxy :0
+
+NOT HANDED BACK YET — Phone R5CT30AAAA2 could not be handed back yet (the capture set its proxy to 127.0.0.1:47001): its global proxy still points at this machine's capture (127.0.0.1:47001) after it was cleared. While npx nthcase-agent connect runs it keeps trying; or clear the phone's proxy yourself now:  adb -s R5CT30AAAA2 shell settings put global http_proxy :0
+
+The capture certificate stays on each phone until you remove it there:
+  Samsung — it is listed in two places; remove it in both:
+    Settings → Security and privacy → More security settings → View security certificates → User: delete "NthCase agent CA — bench-mac".
+    Settings → Security and privacy → More security settings → User certificates: delete it there too.
+  Pixel and other Android phones:
+    Settings → Security & privacy → More security & privacy → Encryption & credentials → User credentials: remove "NthCase agent CA — bench-mac".
+  (The names differ a little between Android versions: searching Settings for "certificate" finds both screens.)
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== DisableSummary that could not delete =====
+Network capture could NOT be turned off: its mark /home/ada/.config/nth-agent/capture/enabled could not be deleted (permission denied). Delete that file by hand — while it is there, capture is on.
+  - The capture CA's key could NOT be deleted (could not delete ca-key.pem in /home/ada/.config/nth-agent/capture/ca) — delete the folder /home/ada/.config/nth-agent/capture/ca by hand.
+  - 1 capture file(s) are deleted, and these could NOT be: 0f3c2a91-5b7e-4d21-9a3c-6e8f10b2c4d5.har — delete them by hand.
+  - Your workspace hears it within about ten seconds if npx nthcase-agent connect is running; otherwise when it starts.
+
+The capture certificate stays on each phone until you remove it there:
+  Samsung — it is listed in two places; remove it in both:
+    Settings → Security and privacy → More security settings → View security certificates → User: delete "NthCase agent CA — bench-mac".
+    Settings → Security and privacy → More security settings → User certificates: delete it there too.
+  Pixel and other Android phones:
+    Settings → Security & privacy → More security & privacy → Encryption & credentials → User credentials: remove "NthCase agent CA — bench-mac".
+  (The names differ a little between Android versions: searching Settings for "certificate" finds both screens.)
+
+What network capture means here: during a capture run the whole phone's traffic, not only the app's, goes through this machine — use a test phone. Only debug builds that trust user certificates can be read. Everything is masked on this machine before it is sent, and masked again when it reaches us. We keep what arrives with the run for one hour, and nothing raw is ever kept on this machine. The agent never sends the capture CA's key anywhere and keeps it out of backups, though a backup made before that, or by a tool that ignores it, may still hold a copy. The CA lasts one year. npx nthcase-agent@latest capture disable turns it all off — then remove the certificate on the phone (on a Samsung, in both places it is listed).
+===== refused: off =====
+no capture: network capture is switched off on the machine this phone is plugged into (on that machine: npx nthcase-agent@latest capture enable)
+===== refused: CA =====
+no capture: the capture certificate on the machine this phone is plugged into cannot be used — on that machine, npx nthcase-agent@latest doctor says why
+===== refused: four =====
+no capture: the machine this phone is plugged into was already capturing four phones
+===== refused: no port =====
+no capture: the machine this phone is plugged into had no free port for the capture
+===== refused: not recorded =====
+no capture: the machine could not write down what the capture would change on the phone, so it did not touch it
+===== refused: file =====
+no capture: the machine could not create the capture's file, so it did not touch the phone
+===== refused: reverse =====
+no capture: the phone did not accept the capture's adb reverse, so the capture was stopped and the phone handed back
+===== refused: proxy =====
+no capture: the phone did not accept the capture's proxy setting, so the capture was stopped and the phone handed back
+===== refused: not Android =====
+no capture: network capture runs on Android phones only
+===== refused: the peer check =====
+no capture: the machine this phone is plugged into could not check which of its accounts connects to the capture, so it did not touch the phone
+===== refused: ended =====
+no capture: the run had already ended, and its phone had been handed back, when the machine it is plugged into came to start the capture
+===== refused: not set up =====
+no capture: phone R5CT30ABCDE has not been set up for capture on the machine it is plugged into (on that machine: npx nthcase-agent@latest capture setup R5CT30ABCDE)
+===== refused: earlier CA =====
+no capture: phone R5CT30ABCDE was set up for an earlier capture certificate (on that machine: npx nthcase-agent@latest capture setup R5CT30ABCDE)
+===== refused: busy =====
+no capture: phone R5CT30ABCDE was being set up or handed back on its machine when the run asked
+===== refused: live =====
+no capture: another capture was already running on phone R5CT30ABCDE
+===== pull: taken =====
+no capture: it was pulled once and deleted from the machine it was captured on
+===== pull: expired =====
+no capture: it was deleted from the machine it was captured on an hour after the capture stopped
+===== pull: deleted =====
+no capture: it was deleted from the machine it was captured on before it was pulled (network capture was turned off there, or the file was removed by hand)
+===== pull: nothing known =====
+no capture for this run on the machine its phone is plugged into, and that machine has no record of one — it may have restarted, or the run never reached it
+===== pull: unreadable =====
+no capture: the capture file on that machine could not be read

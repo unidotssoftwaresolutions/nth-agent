@@ -1,0 +1,323 @@
+# A BINARY NOBODY CAN DOWNLOAD.
+#
+# The customer-facing docs page said it out loud — "there is no download page yet, and pretending otherwise would
+# waste your afternoon: today you build it from source with Go" — which was honest, and created an obligation to
+# notice when the condition changed. It has: this agent is now the only way a customer connects a device at all.
+#
+# ⚠️ AND EVERY BINARY ANYBODY HAS EVER RUN REPORTS `dev`. `cmd/nth-agent/cli.go` declares
+# `var version = "dev"` with a comment saying it is stamped at build time — and nothing in this repository has
+# ever passed those ldflags. `--version` is wired, is one of the three standard questions the CLI's own sweep
+# covers, and answers with a default nobody has ever displaced. A release whose binary says `dev` is that defect
+# with a download button on it, so the stamp below is the point of this workflow rather than a detail of it.
+#
+# ⚠️ THIS PAGE IS THE ARTIFACT SOURCE, NOT THE DOWNLOAD, AND THAT DECIDES WHAT IT IS FOR. These archives are what
+# `publish-npm.yml` downloads and repackages, and the customer-facing command is `npx`. A release page is a fine thing
+# to have and a poor thing to document as the way to install: npm checks what it unpacks, and a hand-downloaded binary
+# is unsigned and quarantined by macOS.
+#
+# ⚠️ NO SELF-UPDATE, AND THAT IS A DECISION RATHER THAN AN OMISSION — see the README's own paragraph. A binary
+# that rewrites itself is a security surface (it must be told where to fetch from, and whoever can answer that
+# owns every device on that machine) and a support surface (a fleet that silently moves version underneath a
+# person debugging it). ⚠️ THAT IS NOT THE SAME CLAIM as "nothing ever fetches a newer version": `npx` fetches
+# the latest published version by default, and naming a version pins it — the release notes below print that pin
+# as `npx {{PACKAGE}}@{{VERSION}}`, filled in from package.json and the tag. (It used to be written here as a
+# literal, `@` and a made-up number — a version nobody ever published, on every release page.) The agent has no
+# update code path; a person typing a command is not the binary rewriting itself.
+#
+# ⚠️ THE BINARIES ARE NOT SIGNED OR NOTARIZED, and macOS will say so — see the README. Signing needs an Apple
+# Developer ID certificate and an app-specific password stored as repository secrets; notarization needs a
+# submission to Apple's service. Both are credentials, and nothing here creates one. Named, and built none of.
+#
+# ⚠️ THE NOTICES AND THE CHANGELOG TRAVEL WITH EVERY RELEASE (AN_AGENT_THAT_SHIPS_ITS_NOTICES). Every binary links Go and
+# fifteen modules whose licences ask for their notices with every copy, and until 0.3.0 no release carried one. Now each
+# build leg refuses a binary that links a module THIRD_PARTY_NOTICES.txt does not name (read off the binary itself, with
+# `go version -m`), each archive holds the file, and the release attaches it beside them. And the release notes are the
+# tag's own section of CHANGELOG.md: a tag with no section is refused before anything is published — so write the section
+# before you tag.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# ⚠️ EACH JOB HOLDS ONLY WHAT IT USES. This used to grant contents: write to the whole workflow, so the build legs,
+# which only read the tree, held a token that could write releases. Now the default is read, the build says read, and
+# only github-release, which creates the release, can write. A seal in cmd/nth-agent (actions_test.go) holds every job to
+# its list.
+#
+# ⚠️ AND EVERY ACTION IS NAMED BY ITS COMMIT. `@v4` is a tag in somebody else's repository and runs whatever it points at
+# when the job starts. Each `uses:` below names the commit that tag pointed at on 2026-10-20, with the version beside it.
+# To move to a newer one, look up the new version's commit, read what changed, and change both the SHA and the comment.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to check out the tag; the build writes nothing to the repository
+    strategy:
+      matrix:
+        include:
+          # ⚠️ THE SAME THREE TARGETS AS ci.yml, DELIBERATELY. The matrix is a claim this repository makes — the
+          # platform-claims seal in internal/inventory reads the `goos:` values out of the workflows and refuses
+          # any user-visible string naming a platform they do not build, AND now refuses a platform built with no
+          # sentence naming it. Widening this set is adding a claim, not adding a build: do it with the sentence,
+          # or not at all. Windows stays absent for the reason ci.yml already gives.
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # ⚠️ THE AGENT'S OWN LICENCE TRAVELS WITH EVERY ARCHIVE. Its code is under the Apache License 2.0, which asks that
+      # whoever receives the program in object form also gets a copy of the licence and the NOTICE file, so the Archive
+      # step packs both beside the binary. A tag whose tree lacks either is refused here, before anything is built, with a
+      # sentence naming each file it lacks — the way publish-npm.yml refuses a tag without them.
+      - name: The tag carries its licence
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in LICENSE NOTICE; do
+            if [ ! -f "$f" ]; then
+              echo "refusing: the tag's tree has no $f, and every archive carries it beside the binary." >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "The agent's code is under the Apache License 2.0, which asks for both with every copy; cut a new tag." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      # THE STAMP. `-X main.version=` is the mechanism cli.go already documents and nothing has ever driven; the
+      # value is the tag itself, so a binary can always be traced to the commit it was cut from. There is no
+      # fallback and no default here on purpose: a release that could not name its own version should fail to
+      # build rather than ship one more binary that says `dev`.
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          test -n "$VERSION"
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o dist/nth-agent ./cmd/nth-agent
+
+      # ⚠️ THE NOTICES NAME EVERY MODULE THIS BINARY LINKS — asked of the binary itself, not of go.mod or of a list. A
+      # test builds THIRD_PARTY_NOTICES.txt from `go list` and fails when it drifts, but CI does not run on a tag, so the
+      # release asks again here, of the bytes it is about to ship: every `dep` that `go version -m` reads out of this
+      # binary must have its exact `Module: <path> <version>` line in the file. A replaced module (`=>`) is refused too —
+      # the notices name modules, and whose code a replacement is has never had to be decided. A miss stops this leg, and
+      # with it the release, before anything is published.
+      - name: The notices name every module this binary links
+        run: |
+          set -euo pipefail
+          test -f THIRD_PARTY_NOTICES.txt || { echo "refusing: THIRD_PARTY_NOTICES.txt is not in the tag's tree." >&2; exit 1; }
+          INFO="${RUNNER_TEMP}/buildinfo-${{ matrix.goos }}-${{ matrix.goarch }}.txt"
+          go version -m dist/nth-agent > "$INFO"
+          cat "$INFO"
+          deps=0
+          missing=0
+          while IFS=$'\t' read -r kind path version _; do
+            case "$kind" in
+              dep)
+                deps=$((deps + 1))
+                if ! grep -qxF "Module: $path $version" THIRD_PARTY_NOTICES.txt; then
+                  echo "refusing: $path $version is linked into this binary and THIRD_PARTY_NOTICES.txt has no entry for it." >&2
+                  missing=1
+                fi
+                ;;
+              "=>")
+                echo "refusing: this binary links a replaced module ($path $version), and the notices name modules only." >&2
+                missing=1
+                ;;
+            esac
+          done < "$INFO"
+          if [ "$deps" -eq 0 ]; then
+            echo "refusing: go version -m read no modules out of this binary, so nothing here was checked." >&2
+            exit 1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "Rewrite the notices on the tagged commit (go test . -run TestTheNoticesAreWhatTheReleaseLinks -update)," >&2
+            echo "commit them, and cut a new tag." >&2
+            exit 1
+          fi
+          echo "THIRD_PARTY_NOTICES.txt names all $deps modules this binary links."
+
+      # ONE FILE PER PLATFORM, NAMED SO A PERSON KNOWS WHICH IS THEIRS. `nth-agent_<tag>_<goos>_<goarch>.tar.gz`
+      # holds the binary, the README, the notices, and the agent's own LICENSE and NOTICE — the README is what tells them
+      # the token is shown once and that argv is visible to `ps`, the notices are what the licences of the code inside the
+      # binary ask to travel with every copy of it, and LICENSE and NOTICE are what the agent's own licence asks the same
+      # of: a download that arrives without any of them arrives without something it owes its reader.
+      - name: Archive
+        run: |
+          set -euo pipefail
+          NAME="nth-agent_${GITHUB_REF_NAME}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          cp README.md THIRD_PARTY_NOTICES.txt LICENSE NOTICE dist/
+          tar -C dist -czf "${NAME}.tar.gz" nth-agent README.md THIRD_PARTY_NOTICES.txt LICENSE NOTICE
+          shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+
+      # ⚠️ THESE ARTIFACTS ARE WHAT NPM GETS CHECKED AGAINST. publish-npm.yml refuses a release whose archives are not,
+      # byte for byte, the ones this run kept here, so they must outlive the wait between a release and its publish: 90
+      # days unless the repository's retention setting is shorter.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            *.tar.gz
+            *.tar.gz.sha256
+
+  # ⚠️ THIS JOB CREATES THE GITHUB RELEASE, AND ITS NAME SAYS SO. It used to be called `publish`, with a
+  # step called `Publish` — beside publish-npm.yml, whose job is ALSO `publish` and is the only one that reaches npm.
+  # Reading a green `publish` in the Actions list, the operator had to ask whether the agent had just gone to npm
+  # (2026-09-20); it had not, and a name that makes a person ask that is wrong. publish-npm.yml keeps its names —
+  # two seals cut that file at its `Publish` step, and its job is the one that does publish. A seal in
+  # cmd/nth-agent refuses two workflows sharing a job name.
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to create the release and upload its assets — the token Actions provides, not a secret anybody made
+    steps:
+      # THE PACKAGE NAME IS READ, NOT TYPED — from the same file publish-npm.yml reads it from, at the same commit:
+      # the tag being released. This job never needed the source before (it only gathers the build's archives), so
+      # it takes exactly the files it reads, in its own directory, FIRST — before the archives land, so nothing a
+      # checkout does can touch what this release uploads. A job output from `build` would come from a three-leg
+      # matrix, and an uploaded artifact would arrive among the release's own files. The three files: package.json
+      # for the name, CHANGELOG.md for the notes, THIRD_PARTY_NOTICES.txt to attach beside the archives.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          path: source
+          sparse-checkout: |
+            publish/npm/package.json
+            CHANGELOG.md
+            THIRD_PARTY_NOTICES.txt
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          merge-multiple: true
+
+      # ⚠️ CHECKSUMS, BECAUSE A PERSON IS ABOUT TO RUN THIS AGAINST THEIR OWN PHONES. One SHA256SUMS file beside
+      # the archives, in the format `shasum -a 256 -c` reads, so verifying is one command rather than an eyeball
+      # comparison. It is not a signature and does not claim to be: it proves the file you have is the file the
+      # release page lists, and nothing about who built it.
+      - name: Collect checksums
+        run: |
+          set -euo pipefail
+          cat *.tar.gz.sha256 > SHA256SUMS
+          rm -f *.tar.gz.sha256
+          cat SHA256SUMS
+
+      # THE NOTICES BESIDE THE ARCHIVES, as a file of their own, so a reader of the release page can read what the
+      # binaries carry without unpacking one. The tag's own file — the one every build leg checked its binary against.
+      - name: Put the notices beside the archives
+        run: |
+          set -euo pipefail
+          test -f source/THIRD_PARTY_NOTICES.txt || { echo "refusing: the tag's tree has no THIRD_PARTY_NOTICES.txt." >&2; exit 1; }
+          cp source/THIRD_PARTY_NOTICES.txt THIRD_PARTY_NOTICES.txt
+
+      # ⚠️ THE RELEASE NOTES ARE DERIVED, THE WAY THE README IS. They used to be an inline string that typed the
+      # package name by hand and pinned `@` a made-up version — printed on every release page this repository ever
+      # cut. Now the template below carries {{PACKAGE}} and {{VERSION}}, filled from package.json and from the tag
+      # without its `v` (the same two spellings publish-npm.yml's README cut uses), and the step REFUSES if ANY
+      # {{…}} token survives — any, not only the two it knows, so a misspelt token fails here instead of reaching
+      # the page. The template stays inside this file on purpose: the self-update seal reads every workflow, and a
+      # refusal of self-update that moved out of its sight would be the defect this repository keeps removing.
+      #
+      # ⚠️ AND WHAT IS IN THE RELEASE IS THE TAG'S OWN SECTION OF CHANGELOG.md, read from the tag's tree: the heading
+      # `## <version>` (the tag without its `v`, alone or followed by a space) and everything under it, up to the next
+      # `## `. A tag with no such section, or an empty one, is REFUSED here — before the release exists — because a release
+      # page that cannot say what is in it is the one its reader most needed to. The section goes where {{CHANGES}} stands,
+      # AFTER the token substitution, so a token inside the CHANGELOG is never filled in: the refusal below catches it.
+      - name: Write the release notes
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          NAME="$(node -p "require('./source/publish/npm/package.json').name")"
+          test -n "$NAME"
+          test -f source/CHANGELOG.md || { echo "refusing: the tag's tree has no CHANGELOG.md, so the release cannot say what is in it." >&2; exit 1; }
+          CHANGES="${RUNNER_TEMP}/changes.md"
+          awk -v v="$VERSION" '
+            BEGIN { h = "## " v }
+            /^## / {
+              if (inside) { inside = 0; done = 1 }
+              else if (!done && index($0, h) == 1 && (length($0) == length(h) || substr($0, length(h) + 1, 1) == " ")) { inside = 1; next }
+            }
+            inside { line[++n] = $0 }
+            END {
+              first = 1; while (first <= n && line[first] ~ /^[ \t\r]*$/) first++
+              last = n; while (last >= first && line[last] ~ /^[ \t\r]*$/) last--
+              for (i = first; i <= last; i++) print line[i]
+            }' source/CHANGELOG.md > "$CHANGES"
+          if [ ! -s "$CHANGES" ]; then
+            echo "refusing: CHANGELOG.md has no section for $VERSION — a \"## $VERSION\" heading with something under it." >&2
+            echo "The release notes are that section: add it, commit it, and tag that commit." >&2
+            exit 1
+          fi
+          TEMPLATE="${RUNNER_TEMP}/release-notes.template.md"
+          NOTES="${RUNNER_TEMP}/release-notes.md"
+          sed -e "s|{{PACKAGE}}|$NAME|g" -e "s|{{VERSION}}|$VERSION|g" > "$TEMPLATE" <<'BODY'
+          Built from `v{{VERSION}}`. Every binary reports this version — run `./nth-agent --version`.
+
+          ## What is in {{VERSION}}
+
+          {{CHANGES}}
+
+          ## Before you run it
+
+          **Verify what you downloaded** (the checksums are for the archives, not the binaries inside):
+
+          ```
+          shasum -a 256 -c SHA256SUMS --ignore-missing
+          ```
+
+          **macOS will refuse to open it on first run.** These binaries are not signed or notarized, so Gatekeeper
+          quarantines them: you will see *"cannot be opened because the developer cannot be verified"*. Clear the
+          quarantine attribute yourself, after you have checked the checksum:
+
+          ```
+          xattr -d com.apple.quarantine ./nth-agent
+          ```
+
+          **Third-party notices travel with every copy.** `THIRD_PARTY_NOTICES.txt` is attached beside the archives and is
+          inside each one, and `./nth-agent notices` prints it: the licence of every piece of third-party code these
+          binaries carry.
+
+          **Install with `npx`, not from this page.** Customers run `npx {{PACKAGE}}`, and `publish-npm.yml`
+          builds that package from exactly these archives, so there is never a second build of one tag.
+
+          **There is no self-update.** The agent has no update code path and never replaces itself. `npx`
+          does fetch the latest published version when somebody types it — `npx {{PACKAGE}}@{{VERSION}}` pins a
+          specific one — which is a person asking, not a binary deciding.
+          BODY
+          awk -v f="$CHANGES" '$0 == "{{CHANGES}}" { while ((getline line < f) > 0) print line; next } { print }' "$TEMPLATE" > "$NOTES"
+          if grep -nE '\{\{[^}]*\}\}' "$NOTES"; then
+            echo "refusing: a {{…}} token survived substitution in the release notes about to be published." >&2
+            exit 1
+          fi
+          cat "$NOTES"
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: |
+            *.tar.gz
+            SHA256SUMS
+            THIRD_PARTY_NOTICES.txt
+          fail_on_unmatched_files: true
+          body_path: ${{ runner.temp }}/release-notes.md

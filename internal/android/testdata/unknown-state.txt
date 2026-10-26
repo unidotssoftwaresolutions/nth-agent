@@ -1,0 +1,2 @@
+List of devices attached
+FUTURE0001             quarantined usb:1234567X transport_id:9

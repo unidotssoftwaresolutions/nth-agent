@@ -1,0 +1,16 @@
+nth-agent
+Copyright 2026 Unidots Software Solutions LLC
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes software developed by others, under their own licences:
+  - The Go standard library and runtime, and internal/zstd (copied from Go's
+    src/internal/zstd), Copyright The Go Authors — BSD-3-Clause, with Go's
+    patent grant.
+  - is_mostly_bin, ported from mitmproxy 12.2.3 into internal/netcap,
+    Copyright (c) 2013, Aldo Cortesi — MIT.
+  - The Go modules listed in THIRD_PARTY_NOTICES.txt, whose full licence texts
+    are reproduced there and printed by the agent's `notices` command.
+
+"NthCase" and the NthCase logo are trademarks of Unidots Software Solutions LLC
+and are not licensed under the Apache License.

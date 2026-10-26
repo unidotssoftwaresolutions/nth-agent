@@ -1,0 +1,30 @@
+# THE WEBDRIVERAGENT PORT THIS AGENT PREFERS FOR A DEVICE — the rule, and a table this package did not produce.
+#
+# THE RULE, in words a person can apply by hand:
+#   1. Take the device's UDID. Trim surrounding whitespace and upper-case it (ASCII).
+#   2. Hash those bytes with FNV-1a, 32-bit: start h = 2166136261; for each byte b, h = (h XOR b) * 16777619,
+#      keeping only the low 32 bits.
+#   3. The port is 20000 + (h mod 10000).
+#
+# WHY 20000-29999: above the crowded registered range, and entirely below macOS's ephemeral range
+# (49152-65535), so the operating system never hands this number to an unrelated process behind our back.
+#
+# IT IS A PREFERENCE NOW, NOT A LAW (THE_MACHINE_SAYS_WHICH_PORT). This file once described a rule implemented
+# TWICE — here and in the runner — so a container and a Mac could agree on a number without talking. That was two
+# chances to be wrong about the same thing, and nothing sealed that the copies stayed in step. The worker no
+# longer computes anything: this machine DECLARES the port per device and everything else carries it. The rule
+# survives as how this agent picks a STABLE DEFAULT — a phone that keeps its port across restarts is a phone
+# whose in-flight run is not surprised — and PortChooser gives way to another free port when something on this
+# Mac already holds it, which is the fact no rule could ever know.
+#
+# THE TABLE WAS COMPUTED BY A THIRD IMPLEMENTATION (Python, written from the words above and nothing else),
+# so this package is not checked against its own output. A table one side produces is not a check, it is an echo.
+#
+# sha256 of the rows below, each "<UDID>\t<port>\n", in order:
+# 52400b22e52e221ced200a1f8b584c5d1b054c90cf36cc7b3369d4961fd038ce
+00008140-0000C0FFEE0000A1	22786
+00008110-0000C0FFEE0000B2	25451
+00008030-001A2B3C4D5E6F70	25156
+00008101-000123456789ABCD	25315
+0123456789ABCDEF01234567	27781
+A	28412

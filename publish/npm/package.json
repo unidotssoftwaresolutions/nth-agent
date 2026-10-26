@@ -1,0 +1,25 @@
+{
+	"name": "nthcase-agent",
+	"version": "0.0.0",
+	"description": "Run tests on the phones plugged into your own machine.",
+	"bin": {
+		"nth-agent": "index.js"
+	},
+	"files": [
+		"index.js",
+		"bin/",
+		"README.md",
+		"THIRD_PARTY_NOTICES.txt",
+		"CHANGELOG.md",
+		"LICENSE",
+		"NOTICE"
+	],
+	"engines": {
+		"node": ">=18"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"license": "Apache-2.0",
+	"private": false
+}
