@@ -21,5 +21,9 @@
 		"access": "public"
 	},
 	"license": "Apache-2.0",
-	"private": false
+	"private": false,
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/unidotssoftwaresolutions/nth-agent.git"
+	}
 }
