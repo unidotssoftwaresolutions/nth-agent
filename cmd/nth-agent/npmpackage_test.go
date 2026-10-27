@@ -541,35 +541,68 @@ func TestNoInstructionNamesACredentialNpmDestroyed(t *testing.T) {
 	}
 }
 
-func TestThePublishStepClaimsNoProvenanceItCannotMake(t *testing.T) {
-	// SIX_READERS_OF_ONE_WORD item 3.3, RE-ARGUED — and the re-argument is the point.
+func TestThePackageNamesThePublicRepositoryItsProvenanceIsFor(t *testing.T) {
+	// SIX_READERS_OF_ONE_WORD item 3.3, RE-ARGUED TWICE — and each re-argument is the point.
 	//
-	// ⚠️ THIS SEAL USED TO REQUIRE `id-token: write` TO BE ABSENT, and that was one conflation away from
-	// correct. `--provenance` needs TWO things: the permission, AND a public source repository ("Provenance
-	// generation is not supported for private repositories, even when publishing public packages",
-	// docs.npmjs.com/trusted-publishers), whose address the package names. This repository was private when that was
-	// written and the package names no repository yet, so the flag is still refused below. But the SAME permission is
-	// also what TRUSTED PUBLISHING needs to authenticate, and that works whether the repository is public or not. Reading the grant as a provenance
-	// claim made the seal forbid the only mechanism npm left us for publishing from CI.
+	// ⚠️ IT USED TO SEAL THE ABSENCE OF PROVENANCE. `--provenance` needs TWO things: the publish job's
+	// `id-token: write`, and a public source repository whose address the package names. This repository was
+	// private, and npm generates no provenance for a private one, so the seal refused the flag and required the
+	// workflow to say why. Before that it required the permission to be absent, which forbade trusted publishing,
+	// the mechanism that needs the same grant to authenticate.
 	//
-	// ⚠️ AND NOTE WHERE THE GRANT NOW IS. It is on the publish JOB, while the old assertion read the
-	// TOP-LEVEL block — so this seal would have gone on passing without a word being changed, by placement
-	// rather than by argument. That is the shape this programme keeps deleting, so it is inverted here
-	// explicitly: the grant is now REQUIRED, and the provenance half stands on its own.
+	// ⚠️ NOW THE REPOSITORY IS PUBLIC, and npm attaches provenance by itself when a package published from a public
+	// repository through trusted publishing names that repository. So what this seals is the half that makes the
+	// statement true: package.json's `repository` names THIS repository. It is derived from go.mod's module path,
+	// the measurement of where the repository is (TestTheModulePathIsTheRepositorysOwnName), not typed twice. A
+	// package naming another repository, or none, would carry no provenance, or a statement about the wrong source.
+	// The grant stays required, and the workflow must say this, not the old explanation.
+	root := repoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("reading go.mod: %v", err)
+	}
+	module := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		if after, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
+			module = strings.TrimSpace(after)
+			break
+		}
+	}
+	if !strings.HasPrefix(module, "github.com/") || strings.Count(module, "/") != 2 {
+		t.Fatalf("instrument guard: go.mod declares %q, not a github.com/<owner>/<repository> path — the address the package "+
+			"must name cannot be read from it", module)
+	}
+
+	repository, ok := npmPackageJSON(t)["repository"].(map[string]any)
+	if !ok {
+		t.Fatal("package.json names no repository (`repository` is not an object) — npm attaches provenance only to a package " +
+			"that names the public repository it was built from, so this package would be published with none")
+	}
+	if want := "git+https://" + module + ".git"; repository["type"] != "git" || repository["url"] != want {
+		t.Fatalf("package.json's repository is %v — it must be {type: git, url: %s}, this repository, which go.mod's module "+
+			"path names. Provenance states where the package was built; a package naming another repository states the wrong one",
+			repository, want)
+	}
+
 	workflow := workflowText(t, "publish-npm.yml")
-	_, publish, found := strings.Cut(workflow, "\n      - name: Publish")
-	if !found {
-		t.Fatal("instrument guard: no publish step found — the parse is reading the wrong thing")
+	job, _, found := strings.Cut(workflow[strings.Index(workflow, "\n  publish:\n")+1:], "\n    steps:\n")
+	if !found || !strings.HasPrefix(job, "  publish:\n") {
+		t.Fatal("instrument guard: no publish job with steps found — the parse is reading the wrong thing")
 	}
-	if strings.Contains(publish, "--provenance") {
-		t.Fatal("the publish step passes --provenance. The permission is granted now, but provenance also needs a " +
-			"PUBLIC source repository that the package names, and it names none — npm refuses the attestation, so the step fails " +
-			"after authenticating, and the customer gets no package at all rather than a package without a badge")
+	if !strings.Contains(job, "\n      id-token: write") {
+		t.Fatal("the publish job does not grant id-token: write — trusted publishing cannot authenticate without it, and npm " +
+			"cannot attach provenance either")
 	}
-	if !strings.Contains(workflow, "private repositories") {
-		t.Fatal("the workflow no longer explains why provenance is absent. The permission that provenance needs is " +
-			"now granted for a different reason, so an unexplained absence reads as an oversight somebody will " +
-			"'fix' by adding the flag — which fails the publish")
+	if strings.Contains(workflow, "private repositories") || strings.Contains(workflow, "--provenance` is still absent") {
+		t.Fatal("the workflow still explains why provenance is absent. The repository is public now and the package names " +
+			"it, so npm attaches provenance by itself; an explanation of its absence is a sentence that is no longer true")
+	}
+	// the comments as prose: a sentence may wrap onto the next comment line
+	prose := strings.Join(strings.Fields(regexp.MustCompile(`\n\s*#`).ReplaceAllString(workflow, " ")), " ")
+	for _, said := range []string{"the repository is public", "names it in package.json's `repository`", "npm attaches provenance by itself"} {
+		if !strings.Contains(prose, said) {
+			t.Fatalf("the workflow does not say %q — what makes the provenance true must be written where the grant is", said)
+		}
 	}
 }
 

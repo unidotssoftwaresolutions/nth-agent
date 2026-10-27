@@ -80,16 +80,15 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # THE PERMISSION IS FOR AUTHENTICATION, NOT PROVENANCE, AND THOSE ARE DIFFERENT THINGS THAT NEED THE SAME
-    # GRANT. `id-token: write` lets the runner mint the OIDC token trusted publishing exchanges for a registry
-    # credential — which works whether the source repository is public or not. Provenance ALSO needs this permission
-    # and something else on top: a public source repository ("Provenance generation is not supported for private
-    # repositories, even when publishing public packages", docs.npmjs.com/trusted-publishers) whose address the
-    # package names. So the grant is here and `--provenance` is still absent, and a seal holds both halves.
+    # ONE GRANT, FOR AUTHENTICATION AND FOR PROVENANCE. `id-token: write` lets the runner mint the OIDC token trusted
+    # publishing exchanges for a registry credential, and npm's provenance statement is made from the same token.
+    # Provenance needs two things more: a public source repository, and a package that names it. Both hold now: the
+    # repository is public, and the package names it in package.json's `repository` field. So a trusted publish from
+    # here carries provenance, and a seal holds the grant and the name (cmd/nth-agent/npmpackage_test.go).
     permissions:
       actions: read # to download the archives release.yml's run kept, which an edit of the release cannot reach
       contents: read # to download the release assets built by release.yml — nothing here writes to the repository
-      id-token: write # to mint the OIDC token trusted publishing exchanges; NOT a provenance claim — see above
+      id-token: write # to mint the OIDC token trusted publishing exchanges, which npm's provenance is made from — see above
     steps:
       # ⚠️ THE TAG'S OWN TREE, NOT THE BRANCH THE BUTTON WAS PRESSED ON. Everything this package ships besides the binaries
       # — the README a customer reads on npmjs.com, CHANGELOG.md, THIRD_PARTY_NOTICES.txt, the shim, the manifest — is read
@@ -324,14 +323,11 @@ jobs:
           fi
           echo "THIRD_PARTY_NOTICES.txt is the text the binary prints."
 
-      # NO --provenance, AND THAT IS ESTABLISHED RATHER THAN ASSUMED. The flag needed two things this workflow does
-      # not have and one of them it cannot have: npm's own page requires `permissions: id-token: write` to mint the
-      # OIDC token (this file grants `contents: read` and nothing else, so the step would have failed before it
-      # reached npm), and "Provenance generation is not supported for private repositories, even when publishing
-      # public packages" (docs.npmjs.com/trusted-publishers, read 2026-09-02) — and this workflow was written in a
-      # repository that was private then. Provenance takes a public source repository with a matching `repository`
-      # field in package.json, plus the permission; until the package names the public repository it is published
-      # from, it is published without a statement it could not have made.
+      # NO --provenance FLAG, AND NONE IS NEEDED. This workflow was written while the repository was private, when npm
+      # could make no provenance statement for it, and it said so here. Now the repository is public and the package
+      # names it in package.json's `repository` field, so on a trusted publish (case 2 above) npm attaches provenance by
+      # itself (docs.npmjs.com/trusted-publishers). The first publish, with a granular access token (case 1), is not a
+      # trusted publish, and this step adds nothing to ask for provenance there.
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
