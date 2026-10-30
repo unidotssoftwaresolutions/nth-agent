@@ -7,7 +7,8 @@
 //   - every capability in it is on Capabilities, below, with a value of the kind its entry allows;
 //   - every set of capabilities Appium could start it from names a phone, and each phone it names is one this agent
 //     offers right now (Phones);
-//   - its build, if it names one, is an https address on the farm's own host (the one given to --farm).
+//   - its build, if it names one, is an https address on the farm's own host (the one given to --farm), and an .ipa or an
+//     .apk — the agent then fetches it, counts it and hands Appium its own file (builds.go, internal/builds).
 //
 // Inside a session, a route or a `mobile:` command that runs a program, or reads or writes files, on this computer rather
 // than on the phone is refused (InSession). What acts on the phone and the app under test is left alone.
@@ -161,6 +162,11 @@ func (p *Phones) Offers(udid string) bool {
 // Create judges a session-create's body for a phone on this machine: "" lets it through unchanged, anything else is the
 // sentence it is refused with. farmURL is the farm this agent was started with (--farm).
 func Create(body []byte, farmURL string, phones *Phones) string {
+	return create(body, farmURL, phones, nil)
+}
+
+// create is Create, with own saying which paths on this computer are the agent's own file for this request (nil: none).
+func create(body []byte, farmURL string, phones *Phones, own func(string) bool) string {
 	var top map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
@@ -229,15 +235,18 @@ func Create(body []byte, farmURL string, phones *Phones) string {
 		return "the farm asked to start a session with no capabilities at all, so Appium would pick a phone itself — " + nothingSent
 	}
 	for _, set := range sets {
-		if refusal := judgeSet(set, farmURL, phones); refusal != "" {
+		if refusal := judgeSet(set, farmURL, phones, own); refusal != "" {
 			return refusal
 		}
+	}
+	if len(BuildsNamed(true, "POST", "/session", body)) > 1 {
+		return moreThanOneBuild
 	}
 	return ""
 }
 
 // judgeSet judges one set of capabilities Appium could start the session from, with its appium:options read in.
-func judgeSet(set map[string]any, farmURL string, phones *Phones) string {
+func judgeSet(set map[string]any, farmURL string, phones *Phones, own func(string) bool) string {
 	entries := map[string]any{}
 	for key, value := range set {
 		if key == "appium:options" {
@@ -273,7 +282,7 @@ func judgeSet(set map[string]any, farmURL string, phones *Phones) string {
 			return fmt.Sprintf("the farm asked the Appium on this machine for %s, which is not on this agent's list of "+
 				"capabilities a session may carry — %s", safe(key), nothingSent)
 		}
-		if refusal := judgeValue(key, c, value, farmURL, phones); refusal != "" {
+		if refusal := judgeValue(key, c, value, farmURL, phones, own); refusal != "" {
 			return refusal
 		}
 		if c.kind == thePhone {
@@ -287,7 +296,7 @@ func judgeSet(set map[string]any, farmURL string, phones *Phones) string {
 	return ""
 }
 
-func judgeValue(key string, c Capability, value any, farmURL string, phones *Phones) string {
+func judgeValue(key string, c Capability, value any, farmURL string, phones *Phones, own func(string) bool) string {
 	wrong := func(want string) string {
 		return fmt.Sprintf("the farm asked the Appium on this machine for %s with a value that is not %s — %s", safe(key), want, nothingSent)
 	}
@@ -355,9 +364,7 @@ func judgeValue(key string, c Capability, value any, farmURL string, phones *Pho
 		}
 	case theBuild:
 		address, _ := value.(string)
-		if !OnTheFarm(address, farmURL) {
-			return buildRefusal(address, farmURL)
-		}
+		return judgeBuild(address, farmURL, own)
 	}
 	return ""
 }
@@ -435,6 +442,11 @@ var installs = map[string]bool{"installapp": true, "installmultipleapks": true}
 // InSession judges one request inside a session this agent created, for a phone on this machine: "" lets it through
 // unchanged, anything else is the sentence it is refused with.
 func InSession(method, path string, body []byte, farmURL string) string {
+	return inSession(method, path, body, farmURL, nil)
+}
+
+// routeOf is the route an in-session path reaches, after its session: lower-case, with no query and no trailing "/".
+func routeOf(path string) string {
 	if i := strings.IndexAny(path, "?#"); i >= 0 {
 		path = path[:i]
 	}
@@ -449,7 +461,12 @@ func InSession(method, path string, body []byte, farmURL string) string {
 	}
 	// Appium routes without regard to case (its server is an Express app, and Appium leaves case-sensitive routing off), so
 	// a route spelled in other letters is judged as the route it reaches.
-	rest = strings.ToLower(strings.TrimRight(rest, "/"))
+	return strings.ToLower(strings.TrimRight(rest, "/"))
+}
+
+// inSession is InSession, with own as create has it.
+func inSession(method, path string, body []byte, farmURL string, own func(string) bool) string {
+	rest := routeOf(path)
 	refuse := func(what string) string {
 		return "the farm asked the Appium on this machine for " + what + " — this agent never passes on what runs a " +
 			"program, or reads or writes files, on this computer rather than on the phone, so it was refused, and nothing " +
@@ -481,8 +498,8 @@ func InSession(method, path string, body []byte, farmURL string) string {
 		if json.Unmarshal(body, &ask) != nil {
 			return refuse("an install whose build this agent cannot read")
 		}
-		if !OnTheFarm(ask.AppPath, farmURL) {
-			return buildRefusal(ask.AppPath, farmURL)
+		if refusal := judgeBuild(ask.AppPath, farmURL, own); refusal != "" {
+			return refusal
 		}
 	case "/execute/sync", "/execute/async", "/execute", "/execute_async":
 		var ask struct {
@@ -502,9 +519,12 @@ func InSession(method, path string, body []byte, farmURL string) string {
 		}
 		if installs[command] {
 			for _, address := range buildsNamedIn(ask.Args) {
-				if !OnTheFarm(address, farmURL) {
-					return buildRefusal(address, farmURL)
+				if refusal := judgeBuild(address, farmURL, own); refusal != "" {
+					return refusal
 				}
+			}
+			if len(BuildsNamed(false, method, path, body)) > 1 {
+				return moreThanOneBuild
 			}
 		}
 	}

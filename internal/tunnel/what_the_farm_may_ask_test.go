@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +43,9 @@ func askingTunnel(t *testing.T, phones ...string) (*liveFarm, *farmReader, func(
 	liveTunnel(t, farm.server.URL, &out, func(c *tunnel.Config) {
 		c.AppiumURL = server.URL
 		offeringPhones(c, phones...)
+		// AMENDED (a build it has counted): the agent now fetches and counts a build itself before Appium hears of it, so
+		// these seals' agent has a folder for builds, and the farm's build route answers it from memory with a real build.
+		c.Builds = countedShelf(t.TempDir(), &buildRoute{answer: serves(aBuild(t, "any"))})
 	})
 	conn := farm.next(t)
 	reader := readFarmSide(conn)
@@ -140,8 +145,24 @@ func TestEveryCreateTheFarmsRunnerSendsTodayStillPasses(t *testing.T) {
 			t.Fatalf("%s: a create the runner sends today must pass, got %v: %s\n%s", name, response["status"], decodeBody(t, response), out.String())
 		}
 		seen := appium.seen()
-		if len(seen) != before+1 || seen[len(seen)-1].Body != body {
-			t.Fatalf("%s: Appium must receive the create byte-identical: %+v", name, seen)
+		if len(seen) != before+1 {
+			t.Fatalf("%s: Appium must receive the create: %+v", name, seen)
+		}
+		// AMENDED (a build it has counted): a create that names no build still reaches Appium byte for byte. One that names
+		// the farm's build reaches it with the agent's own file in the build's place and every other value as it came —
+		// stronger than byte-identical, which pinned the farm's address reaching Appium.
+		if !strings.Contains(body, "/app-cache/") {
+			if seen[len(seen)-1].Body != body {
+				t.Fatalf("%s: Appium must receive the create byte-identical: %+v", name, seen)
+			}
+			continue
+		}
+		file, rest := handedOver(t, true, seen[len(seen)-1].Body)
+		_, farmRest := handedOver(t, true, body)
+		if !strings.Contains(file, string(filepath.Separator)+filepath.Join("nth-agent", "builds")+string(filepath.Separator)) ||
+			strings.Contains(seen[len(seen)-1].Body, host) || !reflect.DeepEqual(rest, farmRest) {
+			t.Fatalf("%s: Appium must receive the create with the agent's own file in the build's place, and nothing else "+
+				"changed: %s", name, seen[len(seen)-1].Body)
 		}
 	}
 }
@@ -342,8 +363,23 @@ func TestWhatActsOnThePhoneInsideASessionStillPasses(t *testing.T) {
 			t.Fatalf("%s %s must pass, got %v: %s\n%s", c.method, c.path, response["status"], decodeBody(t, response), out.String())
 		}
 		seen := appium.seen()
-		if len(seen) != before+1 || seen[len(seen)-1].Body != c.body || seen[len(seen)-1].Path != c.path {
-			t.Fatalf("%s %s must reach Appium byte for byte: %+v", c.method, c.path, seen)
+		if len(seen) != before+1 || seen[len(seen)-1].Path != c.path {
+			t.Fatalf("%s %s must reach Appium: %+v", c.method, c.path, seen)
+		}
+		// AMENDED (a build it has counted): every request that installs nothing still reaches Appium byte for byte; an install
+		// of the farm's build reaches it with the agent's own file in the build's place and every other value as it came.
+		if !strings.Contains(c.body, "/app-cache/") {
+			if seen[len(seen)-1].Body != c.body {
+				t.Fatalf("%s %s must reach Appium byte for byte: %+v", c.method, c.path, seen)
+			}
+			continue
+		}
+		file, rest := handedOver(t, false, seen[len(seen)-1].Body)
+		_, farmRest := handedOver(t, false, c.body)
+		if !strings.Contains(file, string(filepath.Separator)+filepath.Join("nth-agent", "builds")+string(filepath.Separator)) ||
+			strings.Contains(seen[len(seen)-1].Body, host) || !reflect.DeepEqual(rest, farmRest) {
+			t.Fatalf("%s %s must reach Appium with the agent's own file in the build's place, and nothing else changed: %s",
+				c.method, c.path, seen[len(seen)-1].Body)
 		}
 	}
 }

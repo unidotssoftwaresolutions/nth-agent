@@ -583,7 +583,7 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 				case <-timer.C:
 				}
 			},
-			Out: stdout,
+			Out: stdout, Builds: tunnel.BuildShelf{In: configDir},
 		})
 		// THE DIAL WAITS FOR THE FIRST REGISTRATION: /v1/nodes/{id}/tunnel for a node the farm has never seen is
 		// a 404 — and "the drive tunnel dropped" for a socket that never existed was the first sentence a

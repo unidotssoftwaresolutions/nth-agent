@@ -4,6 +4,16 @@ What changed in each release of nth-agent, newest first. Each heading is a versi
 notes are its section here. A command is named here by what you type after the package's name, `capture enable` for
 example: run it through `npx` with that name in front, the way the README shows.
 
+## 0.5.2
+
+- **The agent fetches a session's build itself, and Appium installs the agent's own copy.** Until now Appium downloaded the
+  build from the farm with no size limit and kept it in its own cache. Now the agent fetches it from the farm's own host,
+  follows no redirect, checks the file as an archive without unpacking it, and hands Appium a file in the agent's own
+  folder, removed when the session ends, when the agent stops, and at the next start after a crash.
+- **A build is refused past 400 MiB, or when fewer than 2 GiB of disk would be left.**
+- **A `.zip` or `.apks` build is refused.** Appium would unpack one on this computer, and no phone this agent drives installs
+  one: an iPhone takes an `.ipa`, an Android phone an `.apk`.
+
 ## 0.5.1
 
 - **A capture keeps its last 500 requests, and says how many it left out.** Until now a long run's capture kept its first

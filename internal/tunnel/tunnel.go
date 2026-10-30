@@ -143,7 +143,7 @@ type Config struct {
 	// handback question is answered by it, and a capture pull is served from it. nil = this tunnel carries none — every
 	// capture frame is refused in words, and the handback path is forwarded like any other, as before capture existed.
 	Capture CaptureControl
-
+	Builds  BuildShelf // where a build is fetched to, counted and handed to Appium from (builds.go); zero = no folder: every build is refused
 	// TEST SEAMS, each zero = the node's number (liveness.go, stream.go). No flag and no environment variable reaches
 	// any of them; they exist so the seals drive the same code at durations a test can wait for.
 	PingInterval      time.Duration
@@ -206,6 +206,7 @@ type Tunnel struct {
 	saidSessionless atomic.Bool
 	saidRedirect    atomic.Bool
 	saidTooLarge    atomic.Bool
+	shelf           shelfState
 }
 
 func New(cfg Config) *Tunnel {
@@ -217,8 +218,7 @@ func New(cfg Config) *Tunnel {
 	forward := *cfg.Forward
 	forward.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	cfg.Forward = &forward
-	// EVERYTHING THIS TUNNEL SAYS goes through the agent's terminal filter: a farm's words in it cannot drive the
-	// customer's terminal.
+	// EVERYTHING THIS TUNNEL SAYS goes through the agent's terminal filter: a farm's words in it cannot drive the customer's terminal.
 	cfg.Out = farm.TerminalWriter(cfg.Out)
 	if cfg.ReconnectFloor <= 0 {
 		cfg.ReconnectFloor = ReconnectFloor
@@ -235,7 +235,7 @@ func New(cfg Config) *Tunnel {
 	if cfg.StreamClient == nil {
 		cfg.StreamClient = loopbackStreamClient(cfg.LocalOwner)
 	}
-	return &Tunnel{cfg: cfg, local: localconn.Client("your Appium", AppiumForwardTimeout, cfg.LocalOwner)}
+	return (&Tunnel{cfg: cfg, local: localconn.Client("your Appium", AppiumForwardTimeout, cfg.LocalOwner)}).openBuilds()
 }
 
 // Connected is the drive-path truth the report builder consults: A DEVICE IS OFFERED ONLY WHILE THIS
@@ -257,11 +257,11 @@ func (t *Tunnel) RoutedSessions() int {
 // X-Agent-Token and does NOT ride Client.post(), so it validates the farm URL itself — a ws:// (plain)
 // upgrade to a non-loopback host would hand the token to the network exactly like plain http. (The
 // token census caught this dial as an unclassified token read before this check existed.)
-// EverConnected reports whether this tunnel has been established at least once — the fact that separates
-// "not connected yet" from "dropped" for the reader.
+// EverConnected reports whether this tunnel has been established at least once — the fact that separates "not connected yet" from "dropped" for the reader.
 func (t *Tunnel) EverConnected() bool { return t.everConnected.Load() }
 
 func (t *Tunnel) Run(ctx context.Context) {
+	defer t.removeAllBuilds() // the agent is stopping: no build it fetched outlives it (builds.go)
 	if err := farm.ValidateBaseURL(t.cfg.FarmURL); err != nil {
 		fmt.Fprintf(t.cfg.Out, "%v — the drive tunnel will not dial\n", farm.OneLineForTerminal(err.Error()))
 		return
@@ -919,6 +919,7 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 	// …AND THE REST OF WHAT A SESSION MAY ASK OF THIS MACHINE IS ON ONE LIST (internal/allowed): a create for a phone here
 	// passes only with capabilities on it, a phone this agent offers and a build from the farm's own host; inside a
 	// session, what runs a program or touches files on this computer is refused. The hub is not this machine.
+	var handed []string // the builds this frame fetched (builds.go)
 	if !cloud {
 		refusal := ""
 		if create {
@@ -930,6 +931,15 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 			t.say(refusal + "\n")
 			return errorResponse(frame.ID, "Relay forward error: "+refusal)
 		}
+		// …AND APPIUM INSTALLS ONLY A BUILD THIS AGENT HAS FETCHED, MEASURED AND CHECKED, handed to it as the agent's own file
+		// (builds.go): the farm's address never reaches Appium, which would fetch it, keep it and perhaps unpack it itself. A
+		// file no session holds once this frame is answered (a create that started none) is removed then.
+		handed, refusal = t.handOverBuilds(ctx, create, frame.Method, frame.Path, &decoded)
+		if refusal != "" {
+			t.say(refusal + "\n")
+			return errorResponse(frame.ID, "Relay forward error: "+refusal)
+		}
+		defer t.forgetBuilds(handed)
 	}
 
 	var body io.Reader
@@ -1015,6 +1025,7 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 			// `decoded` is the body that was actually SENT — merged, for a cloud create — so the silence budget
 			// the entry remembers is the one the far side was actually asked for.
 			t.remember(id, dest, decoded)
+			t.holdBuilds(id, handed)
 		}
 	}
 	// …and forgotten when the session is deleted, whatever the endpoint answered: a DELETE is the client saying

@@ -106,9 +106,9 @@ func (t *Tunnel) remember(id string, dest destination, createBody []byte) {
 	t.arm(id, entry)
 }
 
-// forget drops a session the client ended itself. The entry is the gate the release fires through, so dropping
-// it here is also what makes a double release impossible — see releaseIfSilent.
+// forget drops a session the client ended itself, and the builds held for it. The entry is the gate the release fires through, so dropping it here is also what makes a double release impossible — see releaseIfSilent.
 func (t *Tunnel) forget(id string) {
+	t.dropBuilds(id)
 	if value, ok := t.sessions.LoadAndDelete(id); ok {
 		entry := value.(*sessionEntry)
 		entry.mu.Lock()
@@ -175,12 +175,12 @@ func (t *Tunnel) releaseIfSilent(id string) {
 
 	// ⚠️ ONE RELEASE PER SESSION, AND THE TABLE IS THE GATE. Whoever removes the entry is the one who sends the
 	// DELETE; everybody else — a second timer, a re-armed one, the client's own teardown — finds nothing and
-	// sends nothing. A double DELETE is not prevented by a flag that could be read stale, it is impossible
-	// because removing the entry and winning the right to send are the same atomic act.
+	// sends nothing. A double DELETE is not prevented by a flag that could be read stale, it is impossible because removing the entry and winning the right to send are the same atomic act.
 	if !t.sessions.CompareAndDelete(id, value) {
 		return
 	}
 	t.release(id, entry, silent, bound)
+	t.dropBuilds(id) // the lease is over, whatever Appium answered: its build goes (builds.go)
 }
 
 // release sends the DELETE and says what it did.

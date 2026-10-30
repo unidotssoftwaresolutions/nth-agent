@@ -27,6 +27,8 @@ const (
 	RunnerHarNodeCut    = "runner.harNodeCut"    // the runner's reading of that sentence
 	RunnerReadingBounds = "runner.readingBounds" // the runner's bounds on what a run receives
 	RunnerBoundedText   = "runner.boundedText"   // the runner's cut marker
+	RunnerBuildLimits   = "runner.buildLimits"   // the runner's bounds on a build a customer hands it
+	FarmBoundedUnzip    = "farm.boundedUnzip"    // the farm node's counting unpacker, whose list rules the agent ports
 )
 
 // ServerSource is the path of the server's file called name, or the test is skipped, loudly, when this checkout has no
