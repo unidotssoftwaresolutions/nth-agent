@@ -26,6 +26,7 @@ import (
 	"math"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -423,6 +424,11 @@ var runsOnThisComputer = map[string]string{
 	"installcertificate":            "starts a web server on this computer to hand the phone a certificate",
 }
 
+// MaxTreeDepth is the deepest tree a session may ask Appium to read (its snapshotMaxDepth setting): the runner refuses a
+// page source nested deeper than 128 levels, and a source holds two levels of its own around the app's tree, so 126 is the
+// deepest whose source the runner still reads. Appium's own defaults are 70 on Android and 50 on iOS.
+const MaxTreeDepth = 126
+
 // installs are the `mobile:` commands that install a build; their address is held to the same rule as a session's app.
 var installs = map[string]bool{"installapp": true, "installmultipleapks": true}
 
@@ -441,13 +447,19 @@ func InSession(method, path string, body []byte, farmURL string) string {
 			rest = ""
 		}
 	}
-	rest = strings.TrimRight(rest, "/")
+	// Appium routes without regard to case (its server is an Express app, and Appium leaves case-sensitive routing off), so
+	// a route spelled in other letters is judged as the route it reaches.
+	rest = strings.ToLower(strings.TrimRight(rest, "/"))
 	refuse := func(what string) string {
 		return "the farm asked the Appium on this machine for " + what + " — this agent never passes on what runs a " +
 			"program, or reads or writes files, on this computer rather than on the phone, so it was refused, and nothing " +
 			"was sent to Appium"
 	}
 	switch rest {
+	case "/appium/settings":
+		if strings.EqualFold(method, "POST") {
+			return deeperThanARunReads(body)
+		}
 	case "/appium/execute_driver":
 		return refuse("execute_driver, a script Appium runs in its own process on this computer")
 	case "/appium/start_recording_screen", "/appium/stop_recording_screen":
@@ -494,6 +506,39 @@ func InSession(method, path string, body []byte, farmURL string) string {
 					return buildRefusal(address, farmURL)
 				}
 			}
+		}
+	}
+	return ""
+}
+
+// deeperThanARunReads judges a settings call: "" lets it through unchanged, anything else is the sentence it is refused with.
+// Only the tree depth is judged — by whatever letters it is spelled in, and as Appium reads a body, the last of a name given
+// twice — and only a whole number from 1 to MaxTreeDepth, written as one, passes: iOS reads a depth given as text as the
+// number in it. Every other setting passes as it came.
+func deeperThanARunReads(body []byte) string {
+	refused := func(what string) string {
+		return "the farm asked the Appium on this machine " + what + " — so it was refused, and nothing was sent to Appium"
+	}
+	var ask map[string]json.RawMessage
+	if json.Unmarshal(body, &ask) != nil {
+		return refused("for settings this agent cannot read")
+	}
+	raw, given := ask["settings"]
+	if !given {
+		return ""
+	}
+	var settings map[string]json.RawMessage
+	if json.Unmarshal(raw, &settings) != nil || settings == nil {
+		return refused("for settings this agent cannot read")
+	}
+	for name, value := range settings {
+		if !strings.EqualFold(name, "snapshotMaxDepth") {
+			continue
+		}
+		depth := string(bytes.TrimSpace(value))
+		if n, err := strconv.Atoi(depth); err != nil || n < 1 || n > MaxTreeDepth || depth != strconv.Itoa(n) {
+			return refused(fmt.Sprintf("to read each screen to a depth of %s, where a run reads a screen at most %d levels deep "+
+				"(a whole number from 1 to %d)", safe(depth), MaxTreeDepth, MaxTreeDepth))
 		}
 	}
 	return ""

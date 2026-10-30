@@ -23,6 +23,10 @@ const (
 	FarmLeaseQueries    = "farm.leaseQueries"    // the files that hold the farm's lease SQL (a list)
 	RunnerNameRule      = "runner.nameRule"      // the runner's sensitive-name rule, which the agent's masker ports
 	RunnerMaskVectors   = "runner.maskVectors"   // the masking vectors both maskers are held to
+	FarmLiveHarAddon    = "farm.liveHarAddon"    // the farm node's capture add-on, which writes the left-out sentence
+	RunnerHarNodeCut    = "runner.harNodeCut"    // the runner's reading of that sentence
+	RunnerReadingBounds = "runner.readingBounds" // the runner's bounds on what a run receives
+	RunnerBoundedText   = "runner.boundedText"   // the runner's cut marker
 )
 
 // ServerSource is the path of the server's file called name, or the test is skipped, loudly, when this checkout has no

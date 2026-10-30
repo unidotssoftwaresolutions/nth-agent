@@ -19,34 +19,58 @@ import (
 // (<lease>.har), and it is deleted as soon as the farm has pulled it, and in any case an hour after its capture stopped;
 // a sweep at start and on a timer removes anything older, restarts included (Sweep).
 //
-// IT IS A WHOLE HAR AFTER EVERY ENTRY, not only at the end: each entry is written over the document's closing brackets,
-// which are written again after it, so a pull in the middle of a capture reads a document that parses.
+// IT IS A WHOLE HAR AT EVERY MOMENT, not only at the end. While nothing has been left out, each entry is written over the
+// document's closing brackets, which are written again after it. Once a request has been left out, what is kept is no
+// longer what the file begins with, so the document is written whole again: at most once a second while requests keep
+// coming (recording is never in the way of the phone's traffic), and whenever it is read (a pull) or stops (seal, close).
+// So a pull in the middle of a capture reads a document that parses, and the file a stopped capture leaves — the one a
+// pull reads after a restart too — is the document a pull would have read before the stop.
 //
-// TWO BOUNDS, and why each:
-//   - 500 ENTRIES (MaxEntries) — the runner keeps at most 500 per run (NetworkCaptureOptions.MaxEntriesPerRun), so an entry
-//     past it would cross the network to be dropped on arrival. Past it nothing more is written, and the document says so.
+// THREE BOUNDS, and why each — the farm's own node keeps the same three, and the runner reads a capture to them:
+//   - THE LAST 500 REQUESTS (MaxEntries) — the runner shows the last 500 of a run, so an older one would cross the network
+//     to be dropped on arrival. Past it the oldest is left out, and the log's comment says how many requests the app made
+//     and how many of the first are not in it, in the one sentence the runner believes (leftOutSentence).
+//   - A HEADER VALUE AT 16,384 CHARACTERS AND AN ADDRESS AT 4,000 (MaxHeaderChars, MaxAddressChars; har.go) — masked
+//     first, then cut with the runner's marker, so a cut never splits a credential the masker would have found.
 //   - 16 MB (MaxFileBytes) — the runner reads at most 48 MB of a capture and gives the pull 30 seconds
 //     (NetworkCapturePull.DownloadCapBytes, PullTimeout), and this file crosses the customer's own uplink to get there. Past
-//     the bound an entry keeps its method, address, status, headers and sizes, and its bodies are left out with the reason.
+//     the bound an entry keeps its method, address, status, headers and sizes, and its bodies are left out with the reason;
+//     one that does not fit even so makes room by leaving out the oldest, so what is kept is still the last requests.
 
 const (
-	// MaxEntries is how many exchanges one capture records — the runner's own per-run bound.
+	// MaxEntries is how many exchanges one capture keeps: the last ones — the runner's own per-run bound.
 	MaxEntries = 500
 	// MaxFileBytes is the most one capture file holds — a third of what the runner reads, so the pull through the customer's
 	// uplink fits inside the runner's 30-second pull bound from about 4.3 Mbit/s up (128 Mbit in 30 s).
 	MaxFileBytes = 16 << 20
 
 	harSuffix = "]}}"
+
+	// rewriteEvery is how often, at most, a capture that has left a request out writes its whole document while requests
+	// keep coming.
+	rewriteEvery = time.Second
 )
 
-// captureFile is one capture's masked HAR on disk.
+// leftOutSentence is what the log's comment says once the capture has left requests out: the farm's own node writes the
+// same sentence, and the runner believes this one only — plain digits, made = kept + the first left out, and no more
+// entries in the file than kept. A capture that left nothing out carries no comment.
+func leftOutSentence(made, kept int) string {
+	return fmt.Sprintf("This app made %d requests; the capture keeps the last %d, so the first %d are not in it.", made, kept, made-kept)
+}
+
+// captureFile is one capture's masked HAR: the entries it keeps, and the document on disk.
 type captureFile struct {
 	mu      sync.Mutex
 	path    string
 	file    *os.File
-	size    int64
-	entries int
-	suffix  string
+	prefix  string    // the document up to its first entry
+	kept    [][]byte  // the entries the document holds, oldest first
+	keptLen int64     // their bytes, separators not counted
+	seen    int       // the requests this capture took, kept or left out
+	size    int64     // the bytes the document on disk holds
+	suffix  string    // what closes the document on disk
+	behind  bool      // the document on disk is not yet the one kept
+	written time.Time // when the document was last written whole while requests kept coming
 	sealed  bool
 }
 
@@ -72,7 +96,7 @@ func createCaptureFile(dir, lease, agentVersion string) (*captureFile, error) {
 		"comment": "masked on the machine that captured it, before it was written",
 	})
 	prefix := `{"log":{"version":"1.2","creator":` + string(creator) + `,"pages":[],"entries":[`
-	c := &captureFile{path: path, file: file, suffix: harSuffix}
+	c := &captureFile{path: path, file: file, prefix: prefix, suffix: harSuffix}
 	if _, err := file.WriteAt([]byte(prefix+harSuffix), 0); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -82,40 +106,69 @@ func createCaptureFile(dir, lease, agentVersion string) (*captureFile, error) {
 	return c, nil
 }
 
-// add writes one masked entry. bodiesLeftOut makes the same entry without its bodies — what is written once the file
-// is at its byte bound. It reports whether anything was written.
+// closing is what closes the document once it keeps kept of seen requests: the log's comment when some were left out.
+func closing(seen, kept int) string {
+	if seen <= kept {
+		return harSuffix
+	}
+	note, _ := json.Marshal(leftOutSentence(seen, kept))
+	return `],"comment":` + string(note) + `}}`
+}
+
+// add takes one masked entry. bodiesLeftOut makes the same entry without its bodies — what is written when the whole one
+// does not fit the byte bound. It reports whether the entry is kept: one that does not fit even alone is not, and is not
+// counted either.
 func (c *captureFile) add(entry []byte, bodiesLeftOut func() []byte, at time.Time) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.sealed || c.file == nil {
 		return false, nil
 	}
-	if c.entries >= MaxEntries {
-		return false, nil
+	// fits says whether the document still fits its byte bound once the oldest drop entries are left out and candidate is added.
+	fits := func(candidate []byte, drop int) bool {
+		length, n := c.keptLen+int64(len(candidate)), len(c.kept)-drop+1
+		for _, gone := range c.kept[:drop] {
+			length -= int64(len(gone))
+		}
+		return int64(len(c.prefix))+length+int64(n-1)+int64(len(closing(c.seen+1, n))) <= MaxFileBytes
 	}
+	drop := max(0, len(c.kept)-MaxEntries+1)
 	write := entry
-	if c.size+int64(len(entry))+1 > MaxFileBytes {
-		write = bodiesLeftOut()
-		if write == nil || c.size+int64(len(write))+1 > MaxFileBytes {
+	if !fits(write, drop) {
+		if write = bodiesLeftOut(); write == nil {
 			return false, nil
 		}
+		for !fits(write, drop) {
+			if drop == len(c.kept) {
+				return false, nil
+			}
+			drop++
+		}
 	}
-	separator := ""
-	if c.entries > 0 {
-		separator = ","
+	appending := drop == 0 && !c.behind && c.seen == len(c.kept)
+	for _, gone := range c.kept[:drop] {
+		c.keptLen -= int64(len(gone))
 	}
-	c.entries++
-	suffix := c.suffix
-	if c.entries == MaxEntries {
-		// THE DOCUMENT SAYS WHERE IT STOPPED: HAR 1.2's own comment on the log.
-		note, _ := json.Marshal(fmt.Sprintf("this capture reached its bound of %d requests at %s; requests after that were "+
-			"not recorded", MaxEntries, at.UTC().Format(time.RFC3339)))
-		suffix = `],"comment":` + string(note) + `}}`
+	c.kept = append(append(make([][]byte, 0, len(c.kept)-drop+1), c.kept[drop:]...), write)
+	c.keptLen += int64(len(write))
+	c.seen++
+	if appending {
+		separator := ""
+		if len(c.kept) > 1 {
+			separator = ","
+		}
+		if err := c.writeTail(separator+string(write), harSuffix); err != nil {
+			c.behind = true // the document is written whole at the next chance: the stop, or the pull
+			return true, err
+		}
+		return true, nil
 	}
-	if err := c.writeTail(separator+string(write), suffix); err != nil {
-		return false, err
+	c.behind = true
+	if at.Sub(c.written) < rewriteEvery {
+		return true, nil
 	}
-	return true, nil
+	c.written = at
+	return true, c.writeWhole()
 }
 
 // writeTail writes text over the closing brackets, then the closing brackets again.
@@ -130,11 +183,54 @@ func (c *captureFile) writeTail(text, suffix string) error {
 	return nil
 }
 
-// snapshot is the document as it stands — what a pull sends. A capture that stopped has let its handle go and kept its
-// file for the pull, so the file is read back by its name: a regular file, never through a link.
+// writeWhole writes the document kept over the one on disk, and cuts the file to its length.
+func (c *captureFile) writeWhole() error {
+	suffix := closing(c.seen, len(c.kept))
+	doc := make([]byte, 0, int64(len(c.prefix))+c.keptLen+int64(len(c.kept))+int64(len(suffix)))
+	doc = append(doc, c.prefix...)
+	for i, entry := range c.kept {
+		if i > 0 {
+			doc = append(doc, ',')
+		}
+		doc = append(doc, entry...)
+	}
+	doc = append(doc, suffix...)
+	if _, err := c.file.WriteAt(doc, 0); err != nil {
+		return fmt.Errorf("writing the capture file %s: %w", c.path, errors.Unwrap(err))
+	}
+	if int64(len(doc)) < c.size {
+		if err := c.file.Truncate(int64(len(doc))); err != nil {
+			return fmt.Errorf("writing the capture file %s: %w", c.path, errors.Unwrap(err))
+		}
+	}
+	c.size, c.suffix, c.behind = int64(len(doc)), suffix, false
+	return nil
+}
+
+// catchUp writes the document whole when the one on disk is behind it.
+func (c *captureFile) catchUp() error {
+	if !c.behind || c.file == nil {
+		return nil
+	}
+	return c.writeWhole()
+}
+
+// held is how many entries the capture keeps.
+func (c *captureFile) held() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.kept)
+}
+
+// snapshot is the document as it stands — what a pull sends — written whole first when the file is behind it. A capture
+// that stopped has let its handle go and kept its file for the pull, so the file is read back by its name: a regular file,
+// never through a link.
 func (c *captureFile) snapshot() ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.catchUp(); err != nil {
+		return nil, err
+	}
 	file := c.file
 	if file == nil {
 		opened, err := openRegular(c.path)
@@ -173,10 +269,13 @@ func openRegular(path string) (*os.File, error) {
 	return file, nil
 }
 
-// seal stops all further writes: the capture was pulled, or stopped.
+// seal stops all further writes, the document written whole first: the capture was pulled, or stopped.
 func (c *captureFile) seal() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.sealed {
+		_ = c.catchUp()
+	}
 	c.sealed = true
 }
 
@@ -195,10 +294,13 @@ func (c *captureFile) remove() error {
 	return nil
 }
 
-// closeFile releases the file handle and keeps the file.
+// closeFile releases the file handle and keeps the file, the document written whole first.
 func (c *captureFile) closeFile() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.sealed {
+		_ = c.catchUp()
+	}
 	c.sealed = true
 	if c.file != nil {
 		_ = c.file.Close()

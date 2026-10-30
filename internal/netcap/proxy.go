@@ -44,7 +44,7 @@ import (
 //   - an upstream that has not answered within UpstreamHeaderTimeout is given up on: the phone gets a 502 and the record
 //     says so, in this agent's words;
 //   - a WebSocket upgrade is forwarded and recorded; its messages are not;
-//   - a capture records at most 500 exchanges (MaxEntries).
+//   - a capture keeps the last 500 exchanges (MaxEntries), and says how many it left out.
 //
 // NO LIBRARY ERROR TEXT IS EVER RECORDED, PRINTED OR SENT. Go's own errors for an upstream request carry the whole URL —
 // query string, tokens and all — so every failure here is reduced to this agent's own sentence, and the standard library's

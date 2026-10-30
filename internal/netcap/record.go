@@ -20,7 +20,7 @@ type Recording struct {
 	mu       sync.Mutex
 	refused  map[string]bool // hosts already recorded as refusing the certificate: each is recorded once
 	failure  error
-	recorded int
+	recorded int // the requests taken, kept or left out (Seen)
 }
 
 // NewRecording starts lease's record in dir. agentVersion names the build that wrote it.
@@ -102,11 +102,11 @@ func (r *Recording) write(entry harEntry, bodiesLeftOut func() harEntry) {
 	}
 }
 
-// Recorded is how many entries the file holds.
+// Recorded is how many entries the capture keeps: the last MaxEntries at most.
 func (r *Recording) Recorded() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.recorded
+	return r.file.held()
 }
 
 // Failure is why the recording stopped writing, or nil.
@@ -147,4 +147,11 @@ func withoutBodies(entry harEntry) harEntry {
 		entry.Response.Content.Text, entry.Response.Content.Comment = "", reason
 	}
 	return entry
+}
+
+// Seen is how many requests the capture took, kept or left out.
+func (r *Recording) Seen() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.recorded
 }

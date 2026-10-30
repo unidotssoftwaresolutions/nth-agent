@@ -353,3 +353,12 @@ func refusedLive(serial string) string {
 // (A_MACHINE_THAT_STAYS_THE_CUSTOMERS, decision 2).
 const LocalNetworkOpen = "network capture can reach this machine and its local network (" + netcap.AllowLocalFlag + " is on): " +
 	"an app, a web page or the person driving a phone under capture can reach your local services through it, and their answers are recorded"
+
+// recordedAndMasked is what a stopped capture says it kept: how many requests — and, when it kept only the last of them,
+// how many the app made.
+func recordedAndMasked(kept, seen int) string {
+	if seen > kept {
+		return fmt.Sprintf("the app made %d requests, and the last %d were recorded and masked", seen, kept)
+	}
+	return fmt.Sprintf("%d request(s) recorded and masked", kept)
+}

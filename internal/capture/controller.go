@@ -424,14 +424,14 @@ func (c *Controller) Stop(ctx context.Context, lease string) {
 		return // its start has not reached the phone, and sees the stop when it does
 	}
 	handedBack, observation := c.handBackLocked(ctx, s.record, s)
-	entries := 0
+	entries := recordedAndMasked(0, 0)
 	if s.rec != nil {
-		entries = s.rec.Recorded()
+		entries = recordedAndMasked(s.rec.Recorded(), s.rec.Seen())
 	}
 	if handedBack {
-		c.say("network capture on phone %s stopped: %d request(s) recorded and masked; the phone was handed back", s.serial, entries)
+		c.say("network capture on phone %s stopped: %s; the phone was handed back", s.serial, entries)
 	} else {
-		c.say("network capture on phone %s stopped: %d request(s) recorded and masked; the phone could not be handed back yet (%s)", s.serial, entries, observation)
+		c.say("network capture on phone %s stopped: %s; the phone could not be handed back yet (%s)", s.serial, entries, observation)
 	}
 }
 

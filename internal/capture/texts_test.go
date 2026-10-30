@@ -68,6 +68,10 @@ func everyText() []struct{ name, text string } {
 		{"pull: deleted", pullDeleted},
 		{"pull: nothing known", pullNothingKnown},
 		{"pull: unreadable", pullUnreadableState},
+		// ADDED (the capture bounded like the farm's own node): what a stopped capture says it kept, when it kept every request
+		// and when it kept only the last of them.
+		{"stopped: every request kept", recordedAndMasked(7, 7)},
+		{"stopped: the last kept", recordedAndMasked(500, 520)},
 	}
 }
 

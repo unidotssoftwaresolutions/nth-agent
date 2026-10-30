@@ -368,9 +368,9 @@ binary formats, whatever their first bytes look like, and any body with a contro
 arrival, and both maskers are held to one shared set of test cases.
 
 **What reaches us, and for how long: the masked record, kept with the run for one hour.** A body is kept up to
-256 KB, and a run records at most 500 requests. **Nothing raw is ever kept on this machine**: each request is masked
-in memory before it is written, and the masked file waits only until your workspace pulls it, then is deleted — or an
-hour after the capture stops, if nothing pulls it.
+256 KB, a header up to 16,384 characters and an address up to 4,000, and a run keeps its last 500 requests and says how
+many it left out. **Nothing raw is ever kept on this machine**: each request is masked in memory before it is written,
+and the masked file waits only until your workspace pulls it, then is deleted — or an hour after the capture stops.
 
 **The agent never sends the CA's key anywhere and keeps it out of backups, and the CA lasts one year.** To read
 HTTPS, `capture enable` makes one certificate authority for this machine — RSA 2048, named *NthCase agent CA — (this

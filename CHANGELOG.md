@@ -4,6 +4,17 @@ What changed in each release of nth-agent, newest first. Each heading is a versi
 notes are its section here. A command is named here by what you type after the package's name, `capture enable` for
 example: run it through `npx` with that name in front, the way the README shows.
 
+## 0.5.1
+
+- **A capture keeps its last 500 requests, and says how many it left out.** Until now a long run's capture kept its first
+  500 requests and dropped the newest. Now it keeps the last 500, and the run's Network tab says how many earlier requests
+  are not shown. A header longer than 16,384 characters and an address longer than 4,000 are cut, and say where.
+- **A session cannot ask your Appium to read a screen deeper than a run reads.** A settings call that raises Appium's
+  `snapshotMaxDepth` above 126, or names it in a form the agent cannot read, is refused before it reaches Appium. The depths
+  a run uses pass as before.
+- **A route is judged however it is spelled.** Appium matches routes without regard to upper and lower case; the agent now
+  does too, so a refused command cannot pass in other letters.
+
 ## 0.5.0
 
 - **A session the farm starts on your phone carries only what the agent's list allows.** Until now the agent refused one

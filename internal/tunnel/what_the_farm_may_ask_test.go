@@ -300,6 +300,10 @@ func TestWhatRunsOnThisComputerInsideASessionIsRefused(t *testing.T) {
 		"a local file, by mobile: command":  {"POST", s + "/execute/sync", `{"script":"mobile: installApp","args":[{"app":"/Users/ada/app.ipa"}]}`},
 		"several local files":               {"POST", s + "/execute/sync", `{"script":"mobile: installMultipleApks","args":[{"apks":["/Users/ada/a.apk"]}]}`},
 		"a body that is not JSON":           {"POST", s + "/execute/sync", `mobile: shell`},
+		// EXTENDED (a tree no deeper than a run reads): Appium routes without regard to case, so each route spelled in other
+		// letters reaches the same command, and is refused as it is.
+		"execute_driver, in other letters":     {"POST", s + "/Appium/Execute_Driver", `{"script":"return 1","type":"webdriverio"}`},
+		"mobile: shell, its route in capitals": {"POST", s + "/EXECUTE/SYNC", `{"script":"mobile: shell","args":[{"command":"id"}]}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			reader, send, appium, out, _ := startedSession(t)
@@ -326,6 +330,8 @@ func TestWhatActsOnThePhoneInsideASessionStillPasses(t *testing.T) {
 		{"POST", s + "/appium/device/remove_app", `{"appId":"com.example.lantern"}`},
 		{"POST", s + "/se/log", `{"type":"logcat"}`},
 		{"POST", s + "/appium/settings", `{"settings":{"waitForIdleTimeout":0}}`},
+		// EXTENDED (a tree no deeper than a run reads): a tree depth a run can read passes as it came.
+		{"POST", s + "/appium/settings", `{"settings":{"snapshotMaxDepth":70}}`},
 		{"DELETE", s, ""},
 	} {
 		id := "p" + string(rune('a'+i))
@@ -339,5 +345,22 @@ func TestWhatActsOnThePhoneInsideASessionStillPasses(t *testing.T) {
 		if len(seen) != before+1 || seen[len(seen)-1].Body != c.body || seen[len(seen)-1].Path != c.path {
 			t.Fatalf("%s %s must reach Appium byte for byte: %+v", c.method, c.path, seen)
 		}
+	}
+}
+
+// A TREE DEEPER THAN A RUN READS IS REFUSED ON THE WAY (a tree no deeper than a run reads): a settings call that asks
+// Appium to read each screen deeper than the runner reads one is answered by this agent, in words, on the farm's side and
+// on the customer's terminal, and never reaches Appium.
+func TestATreeDeeperThanARunReadsIsRefusedOnTheWay(t *testing.T) {
+	const s = "/session/local-session-1"
+	for name, body := range map[string]string{
+		"a depth past the bound": `{"settings":{"snapshotMaxDepth":500}}`,
+		"a depth given as text":  `{"settings":{"waitForIdleTimeout":0,"snapshotMaxDepth":"500"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			reader, send, appium, out, _ := startedSession(t)
+			send(inSession("d1", "POST", s+"/appium/settings", body))
+			refused(t, name, answerOf(t, reader, "d1"), appium, out, "at most 126 levels deep", "nothing was sent to Appium")
+		})
 	}
 }

@@ -220,3 +220,7 @@ no capture: it was deleted from the machine it was captured on before it was pul
 no capture for this run on the machine its phone is plugged into, and that machine has no record of one — it may have restarted, or the run never reached it
 ===== pull: unreadable =====
 no capture: the capture file on that machine could not be read
+===== stopped: every request kept =====
+7 request(s) recorded and masked
+===== stopped: the last kept =====
+the app made 520 requests, and the last 500 were recorded and masked

@@ -132,7 +132,7 @@ func entryFor(f Flow) harEntry {
 		StartedDateTime: f.Started.UTC().Format("2006-01-02T15:04:05.000000-07:00"),
 		Request: harRequest{
 			Method:      stripNul(f.Method),
-			URL:         maskAddress(stripNul(f.URL)),
+			URL:         cutText(maskAddress(stripNul(f.URL)), MaxAddressChars),
 			HTTPVersion: f.ReqProto,
 			Cookies:     []harPair{},
 			Headers:     pairsOf(reqHeaders),
@@ -187,7 +187,7 @@ func entryFor(f Flow) harEntry {
 		Cookies:     []harPair{},
 		Headers:     pairsOf(respHeaders),
 		Content:     content,
-		RedirectURL: headerValue(respHeaders, "Location"),
+		RedirectURL: cutText(headerValue(respHeaders, "Location"), MaxAddressChars),
 		HeadersSize: -1,
 		BodySize:    f.RespBodySize,
 		Error:       f.Err,
@@ -205,7 +205,7 @@ func refusalEntry(started time.Time, hostPort string) harEntry {
 	return harEntry{
 		StartedDateTime: started.UTC().Format("2006-01-02T15:04:05.000000-07:00"),
 		Request: harRequest{
-			Method: "CONNECT", URL: maskAddress("https://" + hostPort + "/"),
+			Method: "CONNECT", URL: cutText(maskAddress("https://"+hostPort+"/"), MaxAddressChars),
 			Cookies: []harPair{}, Headers: []harPair{}, QueryString: []harPair{}, HeadersSize: -1,
 		},
 		Response: harResponse{Cookies: []harPair{}, Headers: []harPair{}, HeadersSize: -1, BodySize: -1, Error: NotReadableRefused},
@@ -230,10 +230,11 @@ func encodeEntry(entry harEntry) ([]byte, error) {
 	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
 
+// pairsOf is masked headers as the entry holds them: each value cut at MaxHeaderChars.
 func pairsOf(headers []Header) []harPair {
 	out := make([]harPair, len(headers))
 	for i, h := range headers {
-		out[i] = harPair{Name: h.Name, Value: h.Value}
+		out[i] = harPair{Name: h.Name, Value: cutText(h.Value, MaxHeaderChars)}
 	}
 	return out
 }

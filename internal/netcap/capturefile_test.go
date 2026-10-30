@@ -64,7 +64,12 @@ func TestTheCaptureFileIsOwnerOnlyNamedByItsLeaseAndWholeAfterEveryEntry(t *test
 	}
 }
 
-// 500 ENTRIES — the runner's own per-run bound — and the document says where it stopped.
+// 500 ENTRIES — the runner's own per-run bound — and the document says what it left out.
+//
+// AMENDED (the capture bounded like the farm's own node): a capture used to keep the FIRST 500 and say "reached its bound of
+// 500 requests … requests after that were not recorded", a sentence the runner does not read. It now keeps the LAST 500,
+// as the runner shows them, and says how many it left out in the one sentence the runner believes; the count bound itself
+// is unchanged, and the stronger seals are a_capture_bounded_like_the_farm_test.go.
 func TestACaptureRecordsAtMostFiveHundredExchangesAndSaysSo(t *testing.T) {
 	rec, err := NewRecording(filepath.Join(t.TempDir(), "files"), lease1, "dev", nil)
 	if err != nil {
@@ -76,11 +81,11 @@ func TestACaptureRecordsAtMostFiveHundredExchangesAndSaysSo(t *testing.T) {
 	}
 	data, _ := rec.Snapshot()
 	entries, comment := readHAR(t, data)
-	if len(entries) != MaxEntries || rec.Recorded() != MaxEntries {
-		t.Fatalf("a capture records %d exchanges, got %d", MaxEntries, len(entries))
+	if len(entries) != MaxEntries || rec.Recorded() != MaxEntries || rec.Seen() != MaxEntries+20 {
+		t.Fatalf("a capture records %d exchanges, got %d (seen %d)", MaxEntries, len(entries), rec.Seen())
 	}
-	if !strings.Contains(comment, "reached its bound of 500 requests") {
-		t.Fatalf("the document says where it stopped, got %q", comment)
+	if comment != "This app made 520 requests; the capture keeps the last 500, so the first 20 are not in it." {
+		t.Fatalf("the document says what it left out, got %q", comment)
 	}
 }
 
