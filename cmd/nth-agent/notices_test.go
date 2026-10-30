@@ -501,6 +501,9 @@ func TestThePublishPutsTheTagsNoticesAndChangelogInThePackage(t *testing.T) {
 	needTools(t, "bash", "cmp", "cp")
 	step := expand(t, workflowStep(t, "publish-npm.yml", "Put the notices and the changelog in the package"),
 		map[string]string{"inputs.tag": "v0.3.0"})
+	// AMENDED (CI that always ends): the tag reaches the step through the job's `env:` now, not pasted into its text, so the
+	// step is run with the environment the job gives it.
+	env := jobEnv(t, "publish-npm.yml", map[string]string{"inputs.tag": "v0.3.0", "inputs.confirm_name": "x"})
 	notices := noticesInTheTree(t)
 	layout := func(release, tree []byte, changelog bool) string {
 		work := t.TempDir()
@@ -525,7 +528,7 @@ func TestThePublishPutsTheTagsNoticesAndChangelogInThePackage(t *testing.T) {
 	}
 
 	work := layout(notices, notices, true)
-	if out, err := runStep(t, step, work); err != nil {
+	if out, err := runStep(t, step, work, env...); err != nil {
 		t.Fatalf("the step refused a release whose notices are the tag's: %v\n%s", err, out)
 	}
 	for _, f := range []string{"THIRD_PARTY_NOTICES.txt", "CHANGELOG.md", "LICENSE", "NOTICE"} {
@@ -552,7 +555,7 @@ func TestThePublishPutsTheTagsNoticesAndChangelogInThePackage(t *testing.T) {
 		{"a tag with no LICENSE", withoutTheLicence},
 		{"a tag with no NOTICE", withoutTheNotice},
 	} {
-		if out, err := runStep(t, step, c.work); err == nil || !strings.Contains(out, "refusing") {
+		if out, err := runStep(t, step, c.work, env...); err == nil || !strings.Contains(out, "refusing") {
 			t.Errorf("%s was not refused (%v):\n%s", c.name, err, out)
 		}
 	}

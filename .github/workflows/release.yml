@@ -56,6 +56,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Every job ends on its own (CI_THAT_ALWAYS_ENDS): one target built, its notices checked and archived; 30 is generous.
+    timeout-minutes: 30
     permissions:
       contents: read # to check out the tag; the build writes nothing to the repository
     strategy:
@@ -188,6 +190,8 @@ jobs:
   github-release:
     needs: build
     runs-on: ubuntu-latest
+    # Every job ends on its own (CI_THAT_ALWAYS_ENDS): collects the archives and creates the release.
+    timeout-minutes: 15
     permissions:
       contents: write # to create the release and upload its assets — the token Actions provides, not a secret anybody made
     steps:

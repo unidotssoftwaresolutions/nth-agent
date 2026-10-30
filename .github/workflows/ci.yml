@@ -51,6 +51,10 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # Every job ends on its own (CI_THAT_ALWAYS_ENDS): a job with none runs to GitHub's 360-minute default, and a sibling
+    # repository's run sat 22 minutes in a step that had printed its results (2026-10-30). Build, vet and `go test -race`;
+    # 30 is generous, and each step carries its own so the log names the one that stopped.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -60,11 +64,16 @@ jobs:
           # ONE HOME for the Go version: go.mod. Nothing here to drift from it.
           go-version-file: go.mod
       - run: go build ./...
+        timeout-minutes: 10
       - run: go vet ./...
+        timeout-minutes: 10
       - run: go test ./... -race
+        timeout-minutes: 20
 
   cross-compile:
     runs-on: ubuntu-latest
+    # Every job ends on its own (CI_THAT_ALWAYS_ENDS): one `go build` per target.
+    timeout-minutes: 15
     strategy:
       matrix:
         include:
@@ -85,3 +94,4 @@ jobs:
       # seal in internal/inventory). Windows is deliberately absent — when we add the target we add
       # the sentence, not before.
       - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+        timeout-minutes: 10

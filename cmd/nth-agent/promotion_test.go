@@ -189,6 +189,9 @@ func TestThePublishShipsOnlyTheArchivesReleaseYmlBuilt(t *testing.T) {
 		logFile := filepath.Join(t.TempDir(), "gh.log")
 		env := []string{"PATH=" + stub + string(os.PathListSeparator) + os.Getenv("PATH"), "GH_LOG=" + logFile,
 			"FIXTURE_RELEASE=" + release, "FIXTURE_BUILT=" + built, "WANT_TAG=" + tag, "WANT_COMMIT=" + commit, "GH_TOKEN=DUMMY"}
+		// AMENDED (CI that always ends): the tag reaches these scripts through the job's `env:` now, not pasted into their
+		// text, so the steps are run with the environment the job gives them.
+		env = append(env, jobEnv(t, "publish-npm.yml", map[string]string{"inputs.tag": tag, "inputs.confirm_name": "x"})...)
 		if f.noRun {
 			env = append(env, "NO_RUN=1")
 		}

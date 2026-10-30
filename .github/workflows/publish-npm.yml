@@ -89,6 +89,15 @@ jobs:
       actions: read # to download the archives release.yml's run kept, which an edit of the release cannot reach
       contents: read # to download the release assets built by release.yml — nothing here writes to the repository
       id-token: write # to mint the OIDC token trusted publishing exchanges, which npm's provenance is made from — see above
+    # Every job ends on its own (CI_THAT_ALWAYS_ENDS): it downloads, checks, unpacks and publishes one release; 20 is generous.
+    timeout-minutes: 20
+    # THE TWO INPUTS REACH THE SCRIPTS THROUGH env:, AND ARE QUOTED THERE (CI_THAT_ALWAYS_ENDS). The runner pastes an expression
+    # into a script's TEXT before bash reads it, so a tag typed as `v1"; curl …; "` used to run, in the job that holds
+    # id-token: write. As an environment variable it is one word to bash, whatever it holds; the steps read "$TAG" and
+    # "$CONFIRM_NAME". cmd/nth-agent/ci_that_always_ends_test.go refuses an input, a ref name or the event in any script.
+    env:
+      TAG: ${{ inputs.tag }}
+      CONFIRM_NAME: ${{ inputs.confirm_name }}
     steps:
       # ⚠️ THE TAG'S OWN TREE, NOT THE BRANCH THE BUTTON WAS PRESSED ON. Everything this package ships besides the binaries
       # — the README a customer reads on npmjs.com, CHANGELOG.md, THIRD_PARTY_NOTICES.txt, the shim, the manifest — is read
@@ -129,8 +138,8 @@ jobs:
         run: |
           set -euo pipefail
           NAME="$(node -p "require('./publish/npm/package.json').name")"
-          if [ "${{ inputs.confirm_name }}" != "$NAME" ]; then
-            echo "refusing: you typed '${{ inputs.confirm_name }}' and the package is named '$NAME'." >&2
+          if [ "$CONFIRM_NAME" != "$NAME" ]; then
+            echo "refusing: you typed '$CONFIRM_NAME' and the package is named '$NAME'." >&2
             echo "A published npm name cannot be withdrawn, so this workflow will not guess at your intent." >&2
             exit 1
           fi
@@ -146,7 +155,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
           mkdir -p dist
           gh release download "$TAG" --repo "${{ github.repository }}" --dir dist --pattern '*.tar.gz' --pattern 'THIRD_PARTY_NOTICES.txt'
 
@@ -159,7 +167,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
           COMMIT="$(git rev-parse HEAD)"
           RUN="$(gh api "repos/${{ github.repository }}/actions/workflows/release.yml/runs?event=push&status=success&head_sha=$COMMIT&per_page=100" \
             --jq "[.workflow_runs[] | select(.head_sha == \"$COMMIT\" and .head_branch == \"$TAG\" and .conclusion == \"success\") | .id] | max // empty")"
@@ -209,7 +216,6 @@ jobs:
       - name: Unpack the binaries
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
           mkdir -p publish/npm/bin
           for goos_goarch in darwin_arm64 darwin_amd64 linux_amd64; do
             archive="dist/nth-agent_${TAG}_${goos_goarch}.tar.gz"
@@ -232,7 +238,6 @@ jobs:
       - name: Put the notices and the changelog in the package
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
           if [ ! -f dist/THIRD_PARTY_NOTICES.txt ]; then
             echo "refusing: release $TAG carries no THIRD_PARTY_NOTICES.txt beside its archives." >&2
             echo "The licences of the code inside its binaries ask for their notices with every copy; cut a new tag." >&2
@@ -267,7 +272,6 @@ jobs:
       - name: Cut the customer half of the README and stamp the package
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
           MARKER="<!-- NOT-FOR-THE-REGISTRY -->"
           if ! grep -qF "$MARKER" README.md; then
             echo "refusing: README.md carries no $MARKER boundary." >&2
