@@ -123,8 +123,12 @@ func TestEveryReadOfTheTokenIsClassified(t *testing.T) {
 		// AN_AGENT_THAT_GUESSES_WHY_IT_WAS_REFUSED: a 401's body is now read and printed, and a server that echoes the
 		// token back into its refusal would have made printing it the way the token reached a terminal.
 		"refusal.go": "reads the token ONLY TO REDACT IT: the farm's refusal text is searched for the agent's own token and every occurrence becomes «token» before anything is printed — compared against, never written anywhere; this is what keeps 'never written into any output' true against a server that echoes the token back (sealed in refusal_test.go)",
-		"main.go":   "reads NTH_AGENT_TOKEN / --token into memory and hands it to farm.Client; never echoed (usage text warns that argv is visible to `ps` — the reason the env var is preferred)",
-		"tunnel.go": "SETS X-Agent-Token on the tunnel upgrade — the second intended exit; its transport is validated at ITS OWN point of use (Run calls ValidateBaseURL before dialing, because the upgrade does not ride Client.post()); the census caught this dial before that check existed",
+		"main.go":    "reads NTH_AGENT_TOKEN / --token into memory and hands it to farm.Client; never echoed (usage text warns that argv is visible to `ps` — the reason the env var is preferred)",
+		"tunnel.go":  "SETS X-Agent-Token on the tunnel upgrade — the second intended exit; its transport is validated at ITS OWN point of use (Run calls ValidateBaseURL before dialing, because the upgrade does not ride Client.post()); the census caught this dial before that check existed",
+		// THE LOAD HARNESS (loadtest/), which is not the published agent. Its fleet holds a workspace's agent token for many
+		// stand-in machines, and its test farm checks the one it was given.
+		"secrets.go": "loadtest/fleet: reads the load-test token from NTH_AGENT_LOADTEST_TOKEN only (no flag) into a Credential whose every fmt verb prints its length, and hands its text only to farm.Client and the tunnel's upgrade — this file's two exits; sealed by loadtest/fleet's TestTheTokenIsNeverPrinted",
+		"standin.go": "loadtest/farmstandin, a test farm on loopback: compares the X-Agent-Token header with the token its test gave it and writes it nowhere",
 	}
 
 	root := filepath.Join("..", "..")

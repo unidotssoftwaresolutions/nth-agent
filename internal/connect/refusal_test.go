@@ -207,7 +207,8 @@ func TestARefusalIsTerminalAtBothSites(t *testing.T) {
 // the token either turns a 401 into a RefusedError or is argued below.
 
 var refusalExempt = map[string]string{
-	"internal/tunnel/tunnel.go": "The drive tunnel is dialled only after a registration succeeded with the same token, so a refusal there is the heartbeat's to report within one tick; the dial's own sentence quotes the farm's words for a refused upgrade (farm.RefusalReason, held by TestEveryAnswerTheFarmGaveIsReadThroughTheOneDoor) or the transport error, names no cause, and retries.",
+	"loadtest/farmstandin/standin.go": "A test farm on loopback for the load harness: it reads the X-Agent-Token header to compare it with the token its test gave it, and refuses a stranger with the farm's own shape; it presents the token to nobody and narrates nothing to a person.",
+	"internal/tunnel/tunnel.go":       "The drive tunnel is dialled only after a registration succeeded with the same token, so a refusal there is the heartbeat's to report within one tick; the dial's own sentence quotes the farm's words for a refused upgrade (farm.RefusalReason, held by TestEveryAnswerTheFarmGaveIsReadThroughTheOneDoor) or the transport error, names no cause, and retries.",
 }
 
 type refusalSource struct {
