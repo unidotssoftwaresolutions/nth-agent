@@ -408,7 +408,12 @@ func TestOneFarmMessagePastTheRelayCapEndsTheTunnelUnread(t *testing.T) {
 
 	// EXACTLY THE CAP: the largest message today's farm can send is read and answered.
 	streamMessage(first, "25252525-0000-0000-0000-000000000001", tunnel.MaxMessageBytes)
-	if statusOf(answerTo(t, reader, "25252525-0000-0000-0000-000000000001")) != http.StatusOK {
+	// AMENDED: 30 s, not answerTo's 5 s. This test is about the cap, not speed: under -race on a shared CI runner, reading
+	// and decoding 64 MiB took 7.4 s once. The over-cap half below already allows 15 s for the same reason.
+	exact := reader.await(t, 30*time.Second, "the answer to 25252525-0000-0000-0000-000000000001", func(f map[string]any) bool {
+		return f["id"] == "25252525-0000-0000-0000-000000000001" && f["kind"] == nil
+	})
+	if statusOf(exact) != http.StatusOK {
 		t.Fatal("a message of exactly 64 MiB must be read and answered")
 	}
 	// ONE BYTE OVER: the tunnel ends, the message is never dispatched, and the agent dials a fresh tunnel.
