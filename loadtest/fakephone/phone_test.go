@@ -138,6 +138,22 @@ func TestAnUnknownCommandIsAnsweredAsAppiumAnswersIt(t *testing.T) {
 	}
 }
 
+// AN UNLOCKED PHONE SAYS SO. Before its first step the runner asks `mobile: isLocked` (no arguments; it wants a boolean), and
+// a real unlocked Android phone answers false — the load test of 2026-11-01 logged it as an unknown command once per run.
+func TestAnUnlockedPhoneAnswersIsLockedAsARealOneDoes(t *testing.T) {
+	server, do := serve(t, quick())
+	session := start(t, do, phones[0].Serial)
+	for _, args := range []any{[]any{}, []any{map[string]any{}}} {
+		status, body := call(t, do, "POST", "/session/"+session+"/execute/sync", map[string]any{"script": "mobile: isLocked", "args": args})
+		if status != 200 || strings.TrimSpace(string(body)) != `{"value":false}` {
+			t.Fatalf("mobile: isLocked (args %v) answered %d %s; an unlocked phone answers 200 {\"value\":false}", args, status, body)
+		}
+	}
+	if unknown := server.Stats().Unknown; len(unknown) != 0 {
+		t.Fatalf("mobile: isLocked is a command this phone knows: %v", unknown)
+	}
+}
+
 func TestASecondSessionOnABusyPhoneIsRefused(t *testing.T) {
 	_, do := serve(t, quick())
 	start(t, do, phones[0].Serial)

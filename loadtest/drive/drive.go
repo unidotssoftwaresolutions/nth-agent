@@ -105,6 +105,10 @@ type Config struct {
 	// there); nil = no pause.
 	Pause io.Reader
 	Out   io.Writer
+	// ProvisionalPasses counts a run that ended provisional WITH NO FAILURE CLASS as passed, in a column of its own — a
+	// recorded scenario with no check steps ends provisional when nothing failed. A provisional run that carries a failure
+	// class is never counted as passed. false = a provisional run stops the drive, as any run that did not pass does.
+	ProvisionalPasses bool
 
 	// TEST SEAMS — no flag reaches them.
 	HTTP *http.Client
@@ -203,18 +207,22 @@ type run struct {
 
 // Result is one step's outcome.
 type Result struct {
-	AtOnce     int
-	Started    int
-	Refused    map[string]int // "HTTP 400 queue_limit_reached: …" → count
-	Passed     int
-	Failed     int
-	Errored    int
-	Other      map[string]int
-	Unfinished int
-	QueueWait  []time.Duration
-	Duration   []time.Duration
-	Failures   map[string]int
-	ReadsLimit int // reads the API answered 429; each was read again at the next poll
+	AtOnce  int
+	Started int
+	Refused map[string]int // "HTTP 400 queue_limit_reached: …" → count
+	Passed  int
+	// ProvisionalPassed is the runs that ended provisional with no failure class, counted as passed (Config.ProvisionalPasses).
+	ProvisionalPassed int
+	Failed            int
+	Errored           int
+	Other             map[string]int
+	Unfinished        int
+	QueueWait         []time.Duration
+	Duration          []time.Duration
+	Failures          map[string]int
+	ReadsLimit        int // reads the API answered 429; each was read again at the next poll
+
+	provisionalColumn bool // the drive counts provisional runs with no failure class as passed, so the line says how many
 }
 
 // Run drives every step and prints each one. It stops after a step with any run that did not pass, or whose p95 duration
@@ -282,7 +290,8 @@ func sum(m map[string]int) int {
 // step starts n runs at once — spread over the workspaces in turn, each on its own fake phone — and follows them to their
 // ends or to the step's bound, when every one still going is cancelled.
 func step(ctx context.Context, cfg Config, n int) Result {
-	result := Result{AtOnce: n, Refused: map[string]int{}, Other: map[string]int{}, Failures: map[string]int{}}
+	result := Result{AtOnce: n, Refused: map[string]int{}, Other: map[string]int{}, Failures: map[string]int{},
+		provisionalColumn: cfg.ProvisionalPasses}
 	var runs []*run
 	perWorkspace := map[string]int{}
 	for i := 0; i < n; i++ {
@@ -325,6 +334,14 @@ func step(ctx context.Context, cfg Config, n int) Result {
 		switch r.status {
 		case "passed", "pass", "passing", "succeeded", "success":
 			result.Passed++
+		case "provisional":
+			// Counted as passed only when the operator asked, and only with nothing that says why it failed or ended: a
+			// provisional run carrying a failure class, or an ended-because word, is a run that did not pass.
+			if cfg.ProvisionalPasses && r.failure == "" && r.ended == "" {
+				result.ProvisionalPassed++
+			} else {
+				result.Other[r.status]++
+			}
 		case "failed", "fail":
 			result.Failed++
 		case "error", "errored":
@@ -533,8 +550,11 @@ func percentile(values []time.Duration, p int) time.Duration {
 
 func print(out io.Writer, r Result) {
 	fmt.Fprintf(out, "\n── %d at once ──\n", r.AtOnce)
-	fmt.Fprintf(out, "  started %d, refused %d; passed %d, failed %d, error %d, unfinished at the bound %d", r.Started, sum(r.Refused),
-		r.Passed, r.Failed, r.Errored, r.Unfinished)
+	fmt.Fprintf(out, "  started %d, refused %d; passed %d, ", r.Started, sum(r.Refused), r.Passed)
+	if r.provisionalColumn {
+		fmt.Fprintf(out, "provisional with no failure class (counted as passed) %d, ", r.ProvisionalPassed)
+	}
+	fmt.Fprintf(out, "failed %d, error %d, unfinished at the bound %d", r.Failed, r.Errored, r.Unfinished)
 	for status, count := range r.Other {
 		fmt.Fprintf(out, ", %s %d", status, count)
 	}

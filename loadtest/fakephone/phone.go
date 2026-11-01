@@ -47,6 +47,9 @@ type Options struct {
 	ScreenshotBytes int
 	// Sleep is the wait seam; nil waits on a timer and gives up when the request goes away.
 	Sleep func(ctx context.Context, d time.Duration)
+	// Arrived is a TEST SEAM: told of each request — its method and its path with the query — as it arrives, before it
+	// waits for anything, so a test can see the order requests reached this machine's Appium in. nil = nobody is told.
+	Arrived func(method, uri string)
 }
 
 // DefaultDelays is what a real Android phone takes, per kind of command. Two are measured on real phones through the
@@ -266,6 +269,9 @@ func unknownCommand() answer {
 func invalidArgument(message string) answer { return w3cError(400, "invalid argument", message) }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.options.Arrived != nil {
+		s.options.Arrived(r.Method, r.URL.RequestURI())
+	}
 	path := strings.TrimPrefix(r.URL.Path, "/wd/hub")
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 64<<20))
 	a := s.route(r.Context(), r.Method, path, body)
@@ -877,6 +883,9 @@ func (s *Server) execute(ctx context.Context, sess *session, args map[string]any
 	case "hideKeyboard":
 		return ok("read", true)
 	case "isKeyboardShown":
+		return ok("read", false)
+	case "isLocked":
+		// What the runner asks before its first step; these phones are never locked, and an unlocked Android says false.
 		return ok("read", false)
 	case "setGeolocation", "resetGeolocation":
 		s.delay(ctx, "query")

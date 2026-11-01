@@ -26,6 +26,7 @@ type api struct {
 	keys    map[string]string // workspace → the key it takes
 	refuse  func(n int) bool
 	outcome func(run int) string // "" = still running
+	failure func(run int) string // the failure class a run that did not pass ends with; "" = none
 	reads   map[string]int
 	cancels int
 	server  *httptest.Server
@@ -34,7 +35,8 @@ type api struct {
 
 func newAPI(t *testing.T, keys map[string]string) *api {
 	a := &api{t: t, keys: keys, reads: map[string]int{}, created: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC),
-		refuse: func(int) bool { return false }, outcome: func(int) string { return "Passed" }}
+		refuse: func(int) bool { return false }, outcome: func(int) string { return "Passed" },
+		failure: func(int) string { return "ElementNotFound" }}
 	a.server = httptest.NewServer(http.HandlerFunc(a.serve))
 	t.Cleanup(a.server.Close)
 	return a
@@ -82,8 +84,8 @@ func (a *api) serve(w http.ResponseWriter, r *http.Request) {
 			data["status"] = status
 			data["finishedAt"] = a.created.Add(time.Duration(n)*time.Second + time.Minute)
 			data["durationMs"] = 60000 + n*1000
-			if status != "Passed" {
-				data["failureClass"] = "ElementNotFound"
+			if class := a.failure(n); status != "Passed" && class != "" {
+				data["failureClass"] = class
 			}
 		}
 		reply(200, map[string]any{"success": true, "data": data})
@@ -189,6 +191,51 @@ func TestAFailedRunStopsTheDriveAndItsClassIsCounted(t *testing.T) {
 	text := out.String()
 	if len(a.starts) != 3 || !strings.Contains(text, "passed 2, failed 1") || !strings.Contains(text, "1 × ElementNotFound") || !strings.Contains(text, "STOP") {
 		t.Fatalf("%d starts:\n%s", len(a.starts), text)
+	}
+}
+
+// A PROVISIONAL RUN IS NOT A PASSED ONE, unless the operator says so: a recorded scenario with no check steps ends
+// provisional when nothing failed. Without the flag such a run stops the drive, as before; with it, a provisional run with
+// no failure class is counted as passed in its own column, and one that carries a failure class still stops the drive.
+func TestAProvisionalRunWithNoFailureClassCountsAsPassedOnlyWhenAskedAndInItsOwnColumn(t *testing.T) {
+	provisional := func(a *api) {
+		a.outcome = func(int) string { return "Provisional" }
+		a.failure = func(int) string { return "" }
+	}
+
+	a := newAPI(t, map[string]string{"ws-a": "k"})
+	provisional(a)
+	cfg, out := config(a, "ws-a=k", 2, 3)
+	drive.Run(context.Background(), cfg)
+	if text := out.String(); len(a.starts) != 2 || !strings.Contains(text, "provisional 2") || !strings.Contains(text, "STOP") {
+		t.Fatalf("without the flag a provisional run stops the drive, as before — %d starts:\n%s", len(a.starts), text)
+	}
+
+	a = newAPI(t, map[string]string{"ws-a": "k"})
+	provisional(a)
+	cfg, out = config(a, "ws-a=k", 2, 3)
+	cfg.ProvisionalPasses = true
+	drive.Run(context.Background(), cfg)
+	text := out.String()
+	if len(a.starts) != 5 || strings.Contains(text, "STOP") || !strings.Contains(text, "every step ran") ||
+		!strings.Contains(text, "passed 0, provisional with no failure class (counted as passed) 3,") {
+		t.Fatalf("with the flag a provisional run with no failure class passes, said in its own column — %d starts:\n%s", len(a.starts), text)
+	}
+
+	a = newAPI(t, map[string]string{"ws-a": "k"})
+	a.outcome = func(int) string { return "Provisional" }
+	a.failure = func(run int) string {
+		if run == 2 {
+			return "ElementNotFound"
+		}
+		return ""
+	}
+	cfg, out = config(a, "ws-a=k", 2, 3)
+	cfg.ProvisionalPasses = true
+	drive.Run(context.Background(), cfg)
+	if text := out.String(); len(a.starts) != 2 || !strings.Contains(text, "(counted as passed) 1,") || !strings.Contains(text, "provisional 1") ||
+		!strings.Contains(text, "1 × ElementNotFound") || !strings.Contains(text, "STOP") {
+		t.Fatalf("a provisional run that carries a failure class is never counted as passed — %d starts:\n%s", len(a.starts), text)
 	}
 }
 

@@ -3,7 +3,9 @@
 // RelayTunnelClient (the reference implementation), not an invention. Nothing listens; no port opens.
 //
 // AN_AGENT_THAT_SHOWS_ITS_PHONE moved it to the node's CURRENT shape (A_TUNNEL_THAT_KNOWS_IT_DIED): requests are
-// answered by one worker, in order, OFF the read loop, so the loop always reads and a ping is always answered; this end
+// answered OFF the read loop, so the loop always reads and a ping is always answered — in one lane per session, in order
+// within it and beside the others, where the node has one worker for all, so one machine's phones never wait for each
+// other (laneOf); this end
 // pings the farm and gives up on a silence (liveness.go), says it reads at all times so the farm pings it too, writes
 // large frames as fragments through a send queue that never makes the library wait on the network (sendqueue.go), and
 // tells the heartbeat what it knows about itself (state.go). And it carries the live view (stream.go).
@@ -190,6 +192,7 @@ type Tunnel struct {
 	// A session this tunnel did not create — after a restart, every session it had — has no entry and is
 	// refused rather than routed by a fact about the node.
 	sessions        sync.Map
+	lanes           atomic.Int64 // request lanes with a worker running, on every tunnel this agent has had (serveLane)
 	connected       atomic.Bool
 	saidDown        atomic.Bool // said "dropped"/"not connected yet" for the CURRENT outage (reset on connect)
 	saidWoken       atomic.Bool // said "the farm answered a heartbeat — dialling now" for the CURRENT outage (reset on connect)
@@ -250,6 +253,10 @@ func (t *Tunnel) RoutedSessions() int {
 	t.sessions.Range(func(_, _ any) bool { n++; return true })
 	return n
 }
+
+// RequestLanes is how many request lanes have a worker running right now — for the seals that prove a lane ends with its
+// work, its session and its tunnel.
+func (t *Tunnel) RequestLanes() int { return int(t.lanes.Load()) }
 
 // Run dials, serves, and reconnects with backoff until ctx ends. Narrates state changes once.
 //
@@ -403,7 +410,6 @@ func (t *Tunnel) connectAndServe(ctx context.Context, url string, onConnected fu
 	}
 
 	go l.keepAlive()
-	go l.serveRequests()
 	readErr := l.read()
 	why := l.howItEnded(readErr, ctx)
 	// THE TUNNEL ENDED: the worker, every pump and every wait for room end with it (a fresh tunnel starts clean), and
@@ -504,8 +510,8 @@ func (l *link) dispatch(data []byte) {
 	}
 	switch head.Kind {
 	case "":
-		// The request/response family. ONE WORKER, IN ORDER, OFF THIS LOOP — the node's arrangement — because an
-		// Appium command can take minutes and the farm now pings this end with a 30 s answer bound.
+		// The request/response family. OFF THIS LOOP, because an Appium command can take minutes and the farm pings this
+		// end with a 30 s answer bound — and in its session's LANE, in order within it, beside every other lane (serveLane).
 		var frame requestFrame
 		if err := json.Unmarshal(data, &frame); err != nil {
 			return
@@ -515,7 +521,8 @@ func (l *link) dispatch(data []byte) {
 			go l.answerHandback(frame)
 			return
 		}
-		if refusal := l.requests.push(frame, len(data)); refusal != "" {
+		key, start, refusal := l.requests.push(frame, len(data))
+		if refusal != "" {
 			// ANSWERED AT ONCE, OFF THIS LOOP: the farm hears why rather than waiting out its own bound.
 			if l.t.saidQueueFull.CompareAndSwap(false, true) {
 				l.t.say("the farm sent more requests than this agent keeps waiting (" + refusal + ") — each one past that is answered at once with a 503, and nothing of it is sent on\n")
@@ -525,6 +532,11 @@ func (l *link) dispatch(data []byte) {
 					_ = l.send(answerInWords(frame.ID, http.StatusServiceUnavailable, "Relay forward error: this agent already has "+refusal+", so this request was not queued; nothing of it was sent on"))
 				}
 			}()
+			return
+		}
+		if start {
+			l.t.lanes.Add(1)
+			go l.serveLane(key)
 		}
 	case "stream-start":
 		l.startStream(data)
@@ -543,28 +555,26 @@ func (l *link) dispatch(data []byte) {
 	}
 }
 
-// serveRequests is THE WORKER: the farm's requests, one at a time, in arrival order, until the tunnel ends.
+// serveLane is ONE LANE'S WORKER: that lane's requests, one at a time, in arrival order, for as long as the lane has one
+// waiting. Lanes run beside each other (laneOf), so one phone's slow command or create holds no other phone's.
 //
 // ⚠️ A FORWARD RUNS UNDER THE AGENT'S CONTEXT, NOT THE TUNNEL'S — a deliberate difference from the node, which cancels
 // it with the connection. A forward in flight when the tunnel drops is most often a session being created; cancelled,
 // Appium may still create it and nothing here would know its id. Let run to its end, the routing table remembers it
 // and the release (release.go) ends it if nobody comes back for it. Only its answer is dropped — there is no tunnel
 // to carry it — and the requests still queued behind it are dropped with the tunnel, as the farm already failed them.
-func (l *link) serveRequests() {
+func (l *link) serveLane(key laneKey) {
+	defer l.t.lanes.Add(-1)
 	for {
-		frame, ok := l.requests.pop(l.life)
+		frame, ok := l.requests.next(l.life, key)
 		if !ok {
 			return
 		}
 		response := l.t.forward(l.agent, frame)
-		if l.life.Err() != nil {
-			return
-		}
 		// Appium's answers wait only for a full queue — never behind a slow viewer's chunks, which wait for far less.
-		if err := l.queue.WaitBelow(l.life, l.t.responseHighWater()); err != nil {
-			return
+		if l.life.Err() == nil && l.queue.WaitBelow(l.life, l.t.responseHighWater()) == nil {
+			_ = l.send(response)
 		}
-		_ = l.send(response)
 	}
 }
 
@@ -644,16 +654,62 @@ func (l *link) howItEnded(err error, agent context.Context) string {
 	}
 }
 
-// requestQueue is the worker's FIFO. A push never makes the read loop wait: past its bounds (MaxQueuedRequests waiting, or
-// MaxQueuedBytes of their messages) it refuses at once, and says which bound it met.
+// laneKey is the lane a request waits in (laneOf).
+type laneKey struct {
+	kind    laneKind
+	session string // the session a sessionLane is for; empty for the other two
+}
+
+type laneKind int
+
+const (
+	sessionLane     laneKind = iota + 1 // one Appium session's requests: the farm's runner sends its next only after the last's answer
+	createLane                          // every session create on this machine, one at a time — see laneOf
+	sessionlessLane                     // status reads, and the frames forward refuses for naming no session
+)
+
+// laneOf is WHICH LANE A REQUEST WAITS IN, read from its method and path the way forward reads them.
+//
+// ONE LANE PER SESSION: a session's requests run in arrival order, as Appium runs one session's commands, and different
+// sessions' lanes run at once — a phone on this machine no longer waits for another phone's commands. A status read
+// never waits behind a session.
+//
+// ⚠️ SESSION CREATES STAY ONE AT A TIME PER MACHINE, in a lane of their own beside every session's. Two sessions on one
+// Appium stay apart by the ports their drivers open on this machine (UiAutomator2's systemPort and a web view's devtools
+// and chromedriver ports, XCUITest's WebDriverAgent build and start). This agent passes none of them (internal/allowed):
+// the drivers choose, and the versions read for this round choose under their own locks — but the driver a customer has
+// installed is theirs, and this agent cannot tell which one guards and which one does not. A create waits only for the
+// create before it, never for a session's commands; a session's commands never wait for a create.
+func laneOf(frame requestFrame) laneKey {
+	if browserstack.IsSessionCreate(frame.Method, frame.Path) {
+		return laneKey{kind: createLane}
+	}
+	if id := sessionIDInPath(frame.Path); id != "" {
+		return laneKey{kind: sessionLane, session: id}
+	}
+	return laneKey{kind: sessionlessLane}
+}
+
+// requestQueue is every lane's FIFO. A push never makes the read loop wait: past its bounds (MaxQueuedRequests waiting, or
+// MaxQueuedBytes of their messages, COUNTED ACROSS EVERY LANE) it refuses at once, and says which bound it met.
+//
+// A LANE EXISTS ONLY WHILE IT HAS WORK: push makes it, with its one worker, for a request that finds none; the worker takes
+// its requests one at a time and, finding none waiting, removes the lane and ends — under the same lock push adds under,
+// so no request is left in a lane without a worker, and a session that is deleted or released leaves no goroutine and no
+// map entry behind. Lanes are this tunnel's alone (link) and end with it. So the goroutines at any moment are at most
+// one per request waiting (MaxQueuedRequests) plus one per forward in flight, and a forward that reaches this machine's
+// Appium is one of: the one create, one status read, or one command of a session the routing table holds — which a create
+// for a phone this agent offers made, and its DELETE or the release removes.
 type requestQueue struct {
 	mu       sync.Mutex
-	items    []queuedRequest
+	lanes    map[laneKey]*lane
+	waiting  int
 	bytes    int64
 	maxItems int
 	maxBytes int64
-	ready    chan struct{}
 }
+
+type lane struct{ items []queuedRequest }
 
 type queuedRequest struct {
 	frame requestFrame
@@ -661,49 +717,62 @@ type queuedRequest struct {
 }
 
 func newRequestQueue(maxItems int, maxBytes int64) *requestQueue {
-	return &requestQueue{maxItems: maxItems, maxBytes: maxBytes, ready: make(chan struct{})}
+	return &requestQueue{maxItems: maxItems, maxBytes: maxBytes, lanes: map[laneKey]*lane{}}
 }
 
-func (q *requestQueue) push(frame requestFrame, size int) string {
+// push puts frame in its lane, or answers the bound it would pass. start says the lane is new: the caller starts its worker.
+func (q *requestQueue) push(frame requestFrame, size int) (key laneKey, start bool, refusal string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	switch {
-	case len(q.items) >= q.maxItems:
-		return fmt.Sprintf("%d requests waiting, its most", len(q.items))
+	case q.waiting >= q.maxItems:
+		return laneKey{}, false, fmt.Sprintf("%d requests waiting, its most", q.waiting)
 	case q.bytes+int64(size) > q.maxBytes:
-		return fmt.Sprintf("%d bytes of requests waiting, and this one would take it past its %d", q.bytes, q.maxBytes)
+		return laneKey{}, false, fmt.Sprintf("%d bytes of requests waiting, and this one would take it past its %d", q.bytes, q.maxBytes)
 	}
-	q.items = append(q.items, queuedRequest{frame: frame, size: int64(size)})
+	key = laneOf(frame)
+	l, found := q.lanes[key]
+	if !found {
+		l = &lane{}
+		q.lanes[key] = l
+	}
+	l.items = append(l.items, queuedRequest{frame: frame, size: int64(size)})
+	q.waiting++
 	q.bytes += int64(size)
-	close(q.ready)
-	q.ready = make(chan struct{})
-	return ""
+	return key, !found, ""
 }
 
-func (q *requestQueue) pop(ctx context.Context) (requestFrame, bool) {
-	for {
-		// A TUNNEL THAT HAS ENDED HANDS OUT NOTHING, queued or not: the farm failed every request still waiting when
-		// it ended, and a retry of one would run it twice (the review's finding, 2026-10-03).
-		if ctx.Err() != nil {
-			return requestFrame{}, false
+// next hands a lane's worker that lane's next request, in arrival order. With none waiting — or with the tunnel ended —
+// the lane is removed and the worker told to end.
+func (q *requestQueue) next(ctx context.Context, key laneKey) (requestFrame, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	l := q.lanes[key]
+	// A TUNNEL THAT HAS ENDED HANDS OUT NOTHING, queued or not: the farm failed every request still waiting when it ended,
+	// and a retry of one would run it twice (the review's finding, 2026-10-03).
+	if l == nil || len(l.items) == 0 || ctx.Err() != nil {
+		if l != nil {
+			for _, item := range l.items {
+				q.waiting--
+				q.bytes -= item.size
+			}
 		}
-		q.mu.Lock()
-		if len(q.items) > 0 {
-			item := q.items[0]
-			q.items[0] = queuedRequest{}
-			q.items = q.items[1:]
-			q.bytes -= item.size
-			q.mu.Unlock()
-			return item.frame, true
-		}
-		ready := q.ready
-		q.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return requestFrame{}, false
-		case <-ready:
-		}
+		delete(q.lanes, key)
+		return requestFrame{}, false
 	}
+	item := l.items[0]
+	l.items[0] = queuedRequest{}
+	l.items = l.items[1:]
+	q.waiting--
+	q.bytes -= item.size
+	return item.frame, true
+}
+
+// open is how many lanes this queue holds — for the seals.
+func (q *requestQueue) open() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.lanes)
 }
 
 // The test seams, each falling back to the node's number.

@@ -29,8 +29,10 @@ const usage = `loadtest — the phone path's load harness. Nothing here is the a
       environment only, never printed). Stops on SIGTERM or Ctrl-C and takes its phones off the farm.
 
   loadtest drive --i-know-this-is-production --scenario ID|WS=ID,WS=ID [--steps 4,8,12,16,20] [--step-bound 20m]
+                 [--provisional-passes]
       Starts runs of one scenario through the product's public API at ` + drive.BaseVariable + `, with the API key in
       ` + drive.KeyVariable + ` (environment only, never printed), step by step, and prints each step's results.
+      --provisional-passes counts a run that ends provisional with no failure class as passed, in its own column.
 `
 
 func main() {
@@ -95,6 +97,7 @@ func runDrive(ctx context.Context, args []string, stdout, stderr io.Writer, gete
 	planVersion := flags.Int("plan-version", 0, "the plan version the runs replay (0 = the scenario's own)")
 	baseline := flags.Duration("baseline-p95", 0, "the 4-at-once step's p95 duration, when the steps run one invocation at a time")
 	noPause := flags.Bool("no-pause", false, "go to the next step without waiting for Enter")
+	provisional := flags.Bool("provisional-passes", false, "count a run that ends provisional with no failure class as passed, in its own column (a scenario with no check steps ends so)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -119,6 +122,8 @@ func runDrive(ctx context.Context, args []string, stdout, stderr io.Writer, gete
 		BaselineP95: *baseline,
 		Pause:       pause,
 		Out:         stdout,
+
+		ProvisionalPasses: *provisional,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, err)

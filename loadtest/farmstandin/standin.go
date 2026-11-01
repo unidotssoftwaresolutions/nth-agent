@@ -370,6 +370,53 @@ func (f *Farm) Send(nodeID string, frame map[string]any, bound time.Duration) ([
 	}
 }
 
+// SendInOrder sends frames down a node's tunnel one after another, without waiting for an answer in between — as a relay
+// carrying several requests at once does — and then waits for every answer, by id, until the bound. The answers come back
+// in the order of frames, whatever order they arrived in.
+func (f *Farm) SendInOrder(nodeID string, frames []map[string]any, bound time.Duration) ([][]byte, error) {
+	f.mu.Lock()
+	n := f.nodes[nodeID]
+	var conn *websocket.Conn
+	if n != nil {
+		conn = n.conn
+	}
+	if conn == nil {
+		f.mu.Unlock()
+		return nil, fmt.Errorf("node %s has no tunnel", nodeID)
+	}
+	waits := make([]chan []byte, len(frames))
+	for i, frame := range frames {
+		id, _ := frame["id"].(string)
+		if id == "" {
+			id = newID()
+			frame["id"] = id
+		}
+		waits[i] = make(chan []byte, 1)
+		n.pending[id] = waits[i]
+	}
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
+	defer cancel()
+	n.writeMu.Lock()
+	for _, frame := range frames {
+		payload, _ := json.Marshal(frame)
+		if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
+			n.writeMu.Unlock()
+			return nil, err
+		}
+	}
+	n.writeMu.Unlock()
+	answers := make([][]byte, len(frames))
+	for i := range frames {
+		select {
+		case answers[i] = <-waits[i]:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("no answer to frame %d of %d within the bound", i+1, len(frames))
+		}
+	}
+	return answers, nil
+}
+
 // Runner is a runner's Appium client on one node's tunnel: each request is a frame, as the farm relays it.
 func (f *Farm) Runner(nodeID string) runnertest.Doer {
 	return func(method, path string, body []byte) (int, []byte, error) {

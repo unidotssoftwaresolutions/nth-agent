@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -339,5 +340,120 @@ func TestARestartedFleetIsTheSameNodes(t *testing.T) {
 	second.stop(t)
 	if before != 2 || len(farm.Nodes()) != 2 {
 		t.Fatalf("a restart registered new nodes: %d then %d", before, len(farm.Nodes()))
+	}
+}
+
+// TWO FAKE PHONES ON ONE CONNECTION, the shape a customer with several phones on one machine has: phone 2's session
+// installs its build, which takes the phone three seconds, and phone 1's commands, sent all at once meanwhile, neither
+// wait for it nor reach the phone out of the order they were sent in. Before one machine's phones stopped waiting for each
+// other, every one of them waited out phone 2's install.
+func TestASlowCreateOnOnePhoneDoesNotDelayAnotherPhoneOnTheSameConnection(t *testing.T) {
+	const installTakes = 3 * time.Second
+	farm := farmstandin.New(token, true)
+	defer farm.Close()
+	var mu sync.Mutex
+	var arrived []string
+	run := startFleet(t, farm, 1, 2, func(c *fleet.Config) {
+		c.Phone.DelayScale = 1
+		c.Phone.Delays = map[string]fakephone.Range{"install": {Min: installTakes, Max: installTakes}}
+		c.Phone.Arrived = func(method, uri string) {
+			mu.Lock()
+			arrived = append(arrived, method+" "+uri)
+			mu.Unlock()
+		}
+	})
+	var nodeID string
+	var udids []string
+	for id, node := range farm.Nodes() {
+		nodeID = id
+		for _, d := range node.Devices {
+			udids = append(udids, d.Udid)
+		}
+	}
+	if len(udids) != 2 {
+		t.Fatalf("one connection with two phones: %+v", farm.Nodes())
+	}
+	do := farm.Runner(nodeID)
+	create := func(udid, build string) []byte {
+		caps := map[string]any{"platformName": "Android", "appium:automationName": "UiAutomator2", "appium:udid": udid,
+			"appium:newCommandTimeout": 120}
+		if build != "" {
+			caps["appium:app"] = build
+		}
+		raw, _ := json.Marshal(map[string]any{"capabilities": map[string]any{"alwaysMatch": caps, "firstMatch": []any{map[string]any{}}}})
+		return raw
+	}
+	status, answer, err := do("POST", "/session", create(udids[0], ""))
+	var started struct {
+		Value struct {
+			SessionID string `json:"sessionId"`
+		} `json:"value"`
+	}
+	if err != nil || status != 200 || json.Unmarshal(answer, &started) != nil || started.Value.SessionID == "" {
+		t.Fatalf("phone 1's session must start: %d %v\n%s", status, err, run.out.String())
+	}
+	session := started.Value.SessionID
+
+	installed := make(chan string, 1)
+	go func() {
+		began := time.Now()
+		status, _, err := do("POST", "/session", create(udids[1], farm.URL()+farmstandin.BuildPath))
+		installed <- fmt.Sprintf("%d %v after %s", status, err, time.Since(began).Round(100*time.Millisecond))
+	}()
+	twoCreates := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, a := range arrived {
+			if a == "POST /session" {
+				n++
+			}
+		}
+		return n == 2
+	}
+	for deadline := time.Now().Add(10 * time.Second); !twoCreates(); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("phone 2's create never reached its phone\n%s", run.out.String())
+		}
+	}
+
+	const commands = 20
+	var frames []map[string]any
+	for i := 1; i <= commands; i++ {
+		frames = append(frames, map[string]any{"method": "GET", "path": fmt.Sprintf("/session/%s/source?n=%d", session, i),
+			"headers": map[string]string{}, "bodyBase64": nil})
+	}
+	began := time.Now()
+	answers, err := farm.SendInOrder(nodeID, frames, 30*time.Second)
+	took := time.Since(began)
+	if err != nil {
+		t.Fatalf("phone 1's commands: %v", err)
+	}
+	for i, a := range answers {
+		var frame struct {
+			Status int `json:"status"`
+		}
+		if json.Unmarshal(a, &frame) != nil || frame.Status != 200 {
+			t.Fatalf("phone 1's command %d answered %d", i+1, frame.Status)
+		}
+	}
+	if took > installTakes/2 {
+		t.Fatalf("phone 1's %d commands took %s: they waited behind phone 2's %s install on the same connection", commands, took.Round(100*time.Millisecond), installTakes)
+	}
+	mu.Lock()
+	var order []string
+	for _, a := range arrived {
+		if strings.HasPrefix(a, "GET /session/"+session+"/source?n=") {
+			order = append(order, strings.TrimPrefix(a, "GET /session/"+session+"/source?n="))
+		}
+	}
+	mu.Unlock()
+	for i, n := range order {
+		if n != fmt.Sprint(i+1) || len(order) != commands {
+			t.Fatalf("phone 1's commands reached it out of the order they were sent in: %v", order)
+		}
+	}
+	if said := <-installed; !strings.HasPrefix(said, "200 <nil>") {
+		t.Fatalf("phone 2's session must still start once its install ends: %s", said)
 	}
 }

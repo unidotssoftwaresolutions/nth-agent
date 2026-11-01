@@ -432,7 +432,7 @@ func TestTheRequestQueueIsBoundedAndAFrameOverItIsAnsweredAtOnce(t *testing.T) {
 			}
 
 			send(t, conn, padded("26262626-0000-0000-0000-000000000000", 0))
-			<-entered // the worker holds the first; the next two wait in the queue
+			<-entered // the worker holds the first; the next two wait in the queue (AMENDED: the status reads' lane, its worker and its queue; the bounds count every lane — TestTheQueuesBoundsAreCountedAcrossEveryLane)
 			send(t, conn, padded("26262626-0000-0000-0000-000000000001", 1))
 			send(t, conn, padded("26262626-0000-0000-0000-000000000002", 2))
 			send(t, conn, padded("26262626-0000-0000-0000-000000000003", 3))

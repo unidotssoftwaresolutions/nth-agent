@@ -62,7 +62,8 @@ func TestALongAppiumCommandLeavesThePingsAnsweredAndTheAnswersInOrder(t *testing
 		t.Fatalf("%d of 10 farm pings went unanswered while an Appium command ran — the read loop is waiting on Appium", unanswered)
 	}
 
-	// ONE WORKER, IN ORDER — the node's arrangement: the fast answer comes after the slow one, never around it.
+	// IN ORDER: the fast answer comes after the slow one, never around it. AMENDED: no longer because one worker serves the
+	// whole machine — a lane serves each session — but because two status reads share their lane, in arrival order.
 	first := reader.await(t, 5*time.Second, "the first answer", func(f map[string]any) bool { return f["status"] != nil })
 	second := reader.await(t, 5*time.Second, "the second answer", func(f map[string]any) bool { return f["status"] != nil })
 	if first["id"] != "11111111-0000-0000-0000-000000000001" || second["id"] != "11111111-0000-0000-0000-000000000002" {

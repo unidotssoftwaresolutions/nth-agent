@@ -4,6 +4,14 @@ What changed in each release of nth-agent, newest first. Each heading is a versi
 notes are its section here. A command is named here by what you type after the package's name, `capture enable` for
 example: run it through `npx` with that name in front, the way the README shows.
 
+## 0.5.3
+
+- **Phones on one computer no longer wait for each other.** Until now the agent answered the farm one request at a time
+  for the whole computer, so a slow step on one phone, such as installing the app, held every other phone's next command.
+  Now each session's commands run in their own turn, in the order they came, beside the other phones' sessions.
+- **Sessions still start one at a time on each computer.** Starting a session is when Appium's drivers choose the ports a
+  session uses on your computer, and not every driver version guards that choice, so two sessions never start at once.
+
 ## 0.5.2
 
 - **The agent fetches a session's build itself, and Appium installs the agent's own copy.** Until now Appium downloaded the
