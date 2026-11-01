@@ -14,6 +14,9 @@ example: run it through `npx` with that name in front, the way the README shows.
 - **Stopping the agent as it starts now stops it.** When the agent runs through `npx` and the npm launcher got a SIGINT or
   SIGTERM in the moment the agent was starting, the launcher ended and the agent kept running. The launcher now listens
   for both before it starts the agent and passes them on. Ctrl-C in a terminal was not affected: it reaches the agent too.
+- **`capture setup` leaves the phone's browser on the check's last page.** The agent could close its proxy while the page
+  saying the check is over was still on its way, so a slow phone's browser could be left with an error page. It now sends
+  the page out before it moves on.
 
 ## 0.5.2
 

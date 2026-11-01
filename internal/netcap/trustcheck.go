@@ -108,7 +108,14 @@ func (t *TrustCheck) answerPlain(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "close")
 	w.Header().Set("Content-Length", strconv.Itoa(len(overPage)))
-	if _, err := io.WriteString(w, overPage); err == nil && r.URL.Path == trustCheckOverPath {
+	// FLUSHED BEFORE IT COUNTS AS SERVED. A ResponseWriter holds what is written until the handler returns, and `capture setup`
+	// closes this proxy as soon as WaitOver returns: told before the page left, it closed the connection with the page still
+	// inside, and the phone's browser got nothing (seen on a slow CI runner). The page is small and leaves in one flush.
+	_, err := io.WriteString(w, overPage)
+	if flusher, ok := w.(http.Flusher); ok && err == nil {
+		flusher.Flush()
+	}
+	if err == nil && r.URL.Path == trustCheckOverPath {
 		t.overOnce.Do(func() { close(t.over) })
 	}
 }
