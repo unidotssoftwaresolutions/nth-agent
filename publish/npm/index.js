@@ -23,15 +23,19 @@ if (binary === undefined) {
 	process.exit(1);
 }
 
-const child = spawn(path.join(__dirname, "bin", binary), process.argv.slice(2), { stdio: "inherit" });
-
+// The signals are listened for before the binary starts. Listening after it would leave a moment when the binary runs
+// and a SIGINT or SIGTERM sent to this process ends it alone, leaving the binary running. A signal that comes before the
+// binary has started is handled once it has, so the binary still hears it.
+let child;
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => {
-		if (child.exitCode === null && child.signalCode === null) {
+		if (child !== undefined && child.exitCode === null && child.signalCode === null) {
 			child.kill(signal);
 		}
 	});
 }
+
+child = spawn(path.join(__dirname, "bin", binary), process.argv.slice(2), { stdio: "inherit" });
 
 child.on("error", (error) => {
 	console.error(`${binary} could not be started: ${error.message}`);

@@ -11,6 +11,9 @@ example: run it through `npx` with that name in front, the way the README shows.
   Now each session's commands run in their own turn, in the order they came, beside the other phones' sessions.
 - **Sessions still start one at a time on each computer.** Starting a session is when Appium's drivers choose the ports a
   session uses on your computer, and not every driver version guards that choice, so two sessions never start at once.
+- **Stopping the agent as it starts now stops it.** When the agent runs through `npx` and the npm launcher got a SIGINT or
+  SIGTERM in the moment the agent was starting, the launcher ended and the agent kept running. The launcher now listens
+  for both before it starts the agent and passes them on. Ctrl-C in a terminal was not affected: it reaches the agent too.
 
 ## 0.5.2
 

@@ -64,8 +64,21 @@ func shimPackage(t *testing.T) (dir string, binaries []string) {
 		writeFile(t, filepath.Join(dir, "bin", name), []byte(fakeAgentScript), 0o755)
 	}
 	// What the platform reads is replaced before the shim runs, so every target is exercised on any machine.
+	// FAKE_SPAWN_STALL holds the shim up right after it starts the binary, as a busy machine can: the binary is running and
+	// can say it is ready before the shim's next line runs. It says so on stderr, so a hold that no longer happens is seen.
 	writeFile(t, filepath.Join(dir, "fake-platform.js"), []byte(`Object.defineProperty(process, "platform", { value: process.env.FAKE_PLATFORM });
 Object.defineProperty(process, "arch", { value: process.env.FAKE_ARCH });
+if (process.env.FAKE_SPAWN_STALL) {
+	const childProcess = require("node:child_process");
+	const spawn = childProcess.spawn;
+	childProcess.spawn = function (...args) {
+		const child = spawn.apply(this, args);
+		require("node:fs").writeSync(2, "held after spawn\n");
+		const until = Date.now() + Number(process.env.FAKE_SPAWN_STALL);
+		while (Date.now() < until) {}
+		return child;
+	};
+}
 `), 0o644)
 	return dir, binaries
 }
@@ -171,6 +184,12 @@ func TestTheShimForwardsSIGINTAndSIGTERMToTheBinary(t *testing.T) {
 	}{{syscall.SIGINT, "got INT", 3}, {syscall.SIGTERM, "got TERM", 4}} {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		cmd := shimCommand(ctx, dir, "linux", "x64", "wait")
+		// AMENDED (CI #1, ubuntu): the signal is sent the moment the binary says it is ready, and the shim is held right
+		// after it starts the binary. A shim that listens for signals only after starting the binary has none of its
+		// listeners yet, dies of the signal and leaves the binary running: what the first CI run saw, every run here.
+		cmd.Env = append(cmd.Env, "FAKE_SPAWN_STALL=300")
+		var errOut strings.Builder
+		cmd.Stderr = &errOut
 		pipe, err := cmd.StdoutPipe()
 		if err != nil {
 			t.Fatal(err)
@@ -194,6 +213,9 @@ func TestTheShimForwardsSIGINTAndSIGTERMToTheBinary(t *testing.T) {
 		err = cmd.Wait()
 		timedOut := ctx.Err() != nil
 		cancel()
+		if !strings.Contains(errOut.String(), "held after spawn") {
+			t.Fatalf("instrument guard: the shim was not held after starting the binary (stderr %q)", errOut.String())
+		}
 		if timedOut {
 			t.Errorf("%v sent to the shim never reached the binary — 10 s later both were still running (output %q)", c.signal, rest.String())
 			continue

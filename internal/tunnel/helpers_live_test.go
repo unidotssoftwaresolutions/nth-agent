@@ -78,6 +78,7 @@ type farmReader struct {
 	frames chan map[string]any
 	paused atomic.Bool
 	ended  chan struct{}
+	kept   []map[string]any // answers an await read while it waited for another frame, in the order they came
 }
 
 func readFarmSide(conn *websocket.Conn) *farmReader {
@@ -102,14 +103,28 @@ func readFarmSide(conn *websocket.Conn) *farmReader {
 }
 
 // await returns the next frame matching keep, failing after the bound.
+//
+// AMENDED (phones side by side): an ANSWER it reads while waiting for another frame is kept for the next await, never
+// dropped. Requests in different lanes are answered in any order, so the answer to a request sent second can come
+// first; a wait for the first one used to throw it away. Each request is answered once, so a kept answer is never stale.
+// Stream frames it does not want are still dropped, as before: a wait for a stream's next chunk wants a new one.
 func (r *farmReader) await(t *testing.T, bound time.Duration, what string, keep func(map[string]any) bool) map[string]any {
 	t.Helper()
+	for i, frame := range r.kept {
+		if keep(frame) {
+			r.kept = append(r.kept[:i:i], r.kept[i+1:]...)
+			return frame
+		}
+	}
 	deadline := time.After(bound)
 	for {
 		select {
 		case frame := <-r.frames:
 			if keep(frame) {
 				return frame
+			}
+			if id, _ := frame["id"].(string); id != "" && frame["kind"] == nil {
+				r.kept = append(r.kept, frame)
 			}
 		case <-deadline:
 			t.Fatalf("no %s within %s", what, bound)

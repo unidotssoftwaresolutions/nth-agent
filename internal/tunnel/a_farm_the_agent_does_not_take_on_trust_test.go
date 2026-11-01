@@ -27,6 +27,17 @@ func answerTo(t *testing.T, reader *farmReader, id string) map[string]any {
 	return reader.await(t, 5*time.Second, "the answer to "+id, func(f map[string]any) bool { return f["id"] == id && f["kind"] == nil })
 }
 
+// answersTo waits for the answer to each id, in whatever order they come — requests in different lanes are answered in
+// any order — and returns them by id.
+func answersTo(t *testing.T, reader *farmReader, ids ...string) map[string]map[string]any {
+	t.Helper()
+	got := map[string]map[string]any{}
+	for _, id := range ids {
+		got[id] = answerTo(t, reader, id)
+	}
+	return got
+}
+
 func statusOf(frame map[string]any) int {
 	status, _ := frame["status"].(float64)
 	return int(status)
@@ -253,9 +264,23 @@ func TestTheHubsRedirectIsNotFollowed(t *testing.T) {
 	elsewhere := &recorder{}
 	elsewhereServer := httptest.NewServer(elsewhere.handler())
 	t.Cleanup(elsewhereServer.Close)
+	// AMENDED (phones side by side): the create and the status read are in different lanes, so their answers come in either
+	// order. The hub answers the status read first, every run, and the test must still hear both.
+	statusAnswered := make(chan struct{})
+	var once sync.Once
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
+		if r.Method == http.MethodPost {
+			select {
+			case <-statusAnswered:
+				time.Sleep(200 * time.Millisecond) // for the status read's answer to reach the farm first
+			case <-time.After(5 * time.Second):
+			}
+		}
 		http.Redirect(w, r, elsewhereServer.URL+r.URL.Path, http.StatusTemporaryRedirect)
+		if r.Method == http.MethodGet {
+			once.Do(func() { close(statusAnswered) })
+		}
 	}))
 	t.Cleanup(hub.Close)
 	farm := newLiveFarm(t)
@@ -269,8 +294,7 @@ func TestTheHubsRedirectIsNotFollowed(t *testing.T) {
 
 	send(t, conn, sessionFrame("17171717-0000-0000-0000-000000000001", cloudCreate))
 	send(t, conn, frame("17171717-0000-0000-0000-000000000002", "GET", "/status"))
-	for _, id := range []string{"17171717-0000-0000-0000-000000000001", "17171717-0000-0000-0000-000000000002"} {
-		answer := answerTo(t, reader, id)
+	for _, answer := range answersTo(t, reader, "17171717-0000-0000-0000-000000000001", "17171717-0000-0000-0000-000000000002") {
 		if statusOf(answer) != http.StatusBadGateway || !strings.Contains(answerBody(t, answer), "redirect") {
 			t.Fatalf("a redirect from the hub must be answered in words, got %d %q", statusOf(answer), answerBody(t, answer))
 		}
