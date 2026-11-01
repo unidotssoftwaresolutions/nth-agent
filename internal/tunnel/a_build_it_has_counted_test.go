@@ -113,24 +113,37 @@ func handedOver(t *testing.T, create bool, body string) (string, map[string]any)
 	if err := json.Unmarshal([]byte(body), &top); err != nil {
 		t.Fatalf("Appium received a body that is not JSON: %s", body)
 	}
+	// A BUILD IS A STRING UNDER A BUILD'S KEY, or an entry of a list under one (a mobile: install's apks) — never any
+	// string in any list: a create's additionalWebviewBundleIds ["*"] is a list too, and the walk visits keys in Go's
+	// random map order, so taking every list's strings made "*" the build about one run in three.
+	buildKeys := map[string]bool{"app": true, "appium:app": true, "appPath": true, "otherApps": true, "appium:otherApps": true, "apks": true}
 	var found string
 	var walk func(v any)
 	walk = func(v any) {
 		switch typed := v.(type) {
 		case map[string]any:
 			for key, inner := range typed {
-				if s, ok := inner.(string); ok && (key == "app" || key == "appium:app" || key == "appPath") {
-					found = s
-					typed[key] = "BUILD"
+				if !buildKeys[key] {
+					walk(inner)
+					continue
 				}
-				walk(inner)
+				switch value := inner.(type) {
+				case string:
+					found = value
+					typed[key] = "BUILD"
+				case []any:
+					for i, entry := range value {
+						if s, ok := entry.(string); ok {
+							found = s
+							value[i] = "BUILD"
+						}
+					}
+				default:
+					walk(inner)
+				}
 			}
 		case []any:
-			for i, inner := range typed {
-				if s, ok := inner.(string); ok { // a list of builds (apks) holds nothing else
-					found = s
-					typed[i] = "BUILD"
-				}
+			for _, inner := range typed {
 				walk(inner)
 			}
 		}
