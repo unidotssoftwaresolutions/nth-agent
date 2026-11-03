@@ -217,6 +217,12 @@ func TestNothingIsSaidWhenTheFarmSaysNothingNewer(t *testing.T) {
 func TestTheUpdateCommandFitsHowTheAgentWasStarted(t *testing.T) {
 	npx := "npx nthcase-agent@latest connect …"
 	global := "npm install -g nthcase-agent@latest"
+	// AMENDED (AN_AGENT_THAT_PASSES_ON_WINDOWS): the project is a path of the system the test runs on — /work/app is not an
+	// absolute path on Windows — and every line names the project's own command, the doctor hint included.
+	project, link := "/work/app", "/work/app/node_modules/.bin/nth-agent"
+	if runtime.GOOS == "windows" {
+		project, link = `C:\work\app`, `C:\work\app\node_modules\.bin\nth-agent.cmd`
+	}
 	for _, c := range []struct {
 		name    string
 		install connect.Install
@@ -234,8 +240,8 @@ func TestTheUpdateCommandFitsHowTheAgentWasStarted(t *testing.T) {
 			[]string{global, "This is the copy installed on this machine with npm install -g, which is older. Started through npx, an installed copy is used before a newer one is fetched.",
 				"run `npx nthcase-agent@latest doctor`"},
 			[]string{"\n  to update, stop it (Ctrl-C) and start it with the flags you use now: npx nthcase-agent@latest"}},
-		{"a project", connect.Install{Started: connect.StartedFromProject, Project: "/work/app"},
-			[]string{"npm install nthcase-agent@latest in /work/app"}, []string{"npm install -g", "npx nthcase-agent@latest"}},
+		{"a project", connect.Install{Started: connect.StartedFromProject, Project: project},
+			[]string{"npm install nthcase-agent@latest in " + project, "run `" + link + " doctor`"}, []string{"npm install -g", "npx nthcase-agent@latest"}},
 		{"cannot tell", connect.Install{}, []string{npx, global}, nil},
 	} {
 		_, server := newVersionFarm(t, "0.4.1", "")

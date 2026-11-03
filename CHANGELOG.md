@@ -28,6 +28,16 @@ example: run it through `npx` with that name in front, the way the README shows.
   Mac or Linux; it checks which account runs Appium, adb's server and each phone's live view the way it does there, and
   keeps the capture key and files to your account alone. iPhones need a Mac: on Windows `connect` says
   `iOS: needs a Mac` once, as a note, and `doctor` marks each iOS check n/a.
+- **On Windows, a session that installs a build starts.** The agent hands Appium its own copy of the build, and it read
+  that copy's Windows path (`C:\Users\…\builds\….apk`) as a web address, which names no kind of build, so every such
+  session was refused there. A file the agent wrote is now read as a path of this computer. The same reading refused a
+  build on a Mac or Linux whose agent folder had a `#` or a `?` in its path.
+- **On Windows, the drive tunnel stays up while the farm answers.** Windows' clock moves in steps of up to 16 ms, and an
+  answer to the agent's ping that came back within the same step was not counted, so with a farm a few milliseconds away
+  and nothing else arriving, a healthy tunnel was dropped and dialled again within 45 seconds.
+- **On Windows, an agent installed in a project is told the project's own command,**
+  `<project>\node_modules\.bin\nth-agent.cmd`, in every line that names one, `doctor`'s hint included. It was told the
+  `npx` form, which can fetch a different copy.
 - **Android emulators are offered.** An emulator running on this computer is your own virtual device, so it is offered
   like a phone on the cable, and `devices` shows it as an `Android emulator` by its virtual device's name. Phones reached
   over Wi-Fi or the network are still left out unless you start with `--offer-uncabled-devices`.

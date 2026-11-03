@@ -24,8 +24,12 @@ func TestOnWindowsAPrivateFileListsThisAccountAlone(t *testing.T) {
 	me := user.User.Sid.String()
 	others := []string{"S-1-1-0", "S-1-5-11", "S-1-5-32-545", "S-1-5-32-544", "S-1-5-18"}
 
-	dir := filepath.Join(t.TempDir(), "nth-agent", "capture")
-	plain := filepath.Join(filepath.Dir(dir), "plain.txt")
+	// AMENDED (AN_AGENT_THAT_PASSES_ON_WINDOWS): the ordinary file is made in the temp folder itself. It was made in
+	// <temp>\nth-agent before anything had made that folder — private.Folder makes it below, so the first windows-latest run
+	// failed here, at "The system cannot find the path specified", before a single access list was read.
+	temp := t.TempDir()
+	dir := filepath.Join(temp, "nth-agent", "capture")
+	plain := filepath.Join(temp, "plain.txt")
 	if err := os.WriteFile(plain, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}

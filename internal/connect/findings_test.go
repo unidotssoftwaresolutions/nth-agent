@@ -3,6 +3,7 @@ package connect_test
 import (
 	"context"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -94,19 +95,40 @@ func TestTheFindingsCacheRefreshesOnItsOwnCadenceNotTheHeartbeats(t *testing.T) 
 		t.Fatalf("a fresh cache is REUSED across heartbeats: want 2 computations (registration + first tick), got %d", got)
 	}
 
-	calls.Store(0)
-	stub2, server2 := newStubFarm(t)
-	_ = stub2
-	var out2 strings.Builder
-	cfg2 := config(server2, &out2, 3)
-	cfg2.IosTeamID, cfg2.IosWdaBundleID = "TEAM7QZ4X2", "com.example.WebDriverAgentRunner"
-	cfg2.Driver = cfg.Driver
-	cfg2.DeviceFindings = provider
-	cfg2.FindingsMaxAge = time.Nanosecond
-	if err := connect.Run(context.Background(), cfg2); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if got := calls.Load(); got != 4 {
-		t.Fatalf("an aged cache recomputes: want 4 (registration + every tick), got %d", got)
+	// AMENDED (AN_AGENT_THAT_PASSES_ON_WINDOWS): the age is read from the loop's own clock (Config.Now), not the machine's.
+	// The ticks here follow each other within microseconds, and Windows' clock moves in steps of up to 15.6 ms, so it read
+	// the same instant at every tick: an age of 0, never 1 ns, and the cache was rightly reused (want 4, got 2). The rule
+	// is the subject, both ways: a clock that has moved past the max age recomputes every tick; a clock that has not
+	// reuses the cache, however many ticks pass.
+	for _, c := range []struct {
+		name  string
+		step  time.Duration // how far the clock moves at each read
+		calls int32
+	}{
+		{"an aged cache recomputes (registration + every tick)", time.Minute, 4},
+		{"a cache the clock has not aged is reused", 0, 2},
+	} {
+		calls.Store(0)
+		_, server2 := newStubFarm(t)
+		var out2 strings.Builder
+		cfg2 := config(server2, &out2, 3)
+		cfg2.IosTeamID, cfg2.IosWdaBundleID = "TEAM7QZ4X2", "com.example.WebDriverAgentRunner"
+		cfg2.Driver = cfg.Driver
+		cfg2.DeviceFindings = provider
+		cfg2.FindingsMaxAge = time.Second
+		var mu sync.Mutex
+		clock := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+		cfg2.Now = func() time.Time {
+			mu.Lock()
+			defer mu.Unlock()
+			clock = clock.Add(c.step)
+			return clock
+		}
+		if err := connect.Run(context.Background(), cfg2); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if got := calls.Load(); got != c.calls {
+			t.Fatalf("%s: want %d computations, got %d", c.name, c.calls, got)
+		}
 	}
 }

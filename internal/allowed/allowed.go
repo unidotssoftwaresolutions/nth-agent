@@ -372,8 +372,8 @@ func judgeValue(key string, c Capability, value any, farmURL string, phones *Pho
 // OnTheFarm says whether address is an https address on the farm's own host and port, with no user name: the only place a
 // build may come from. The farm hands a phone's Appium its builds at /app-cache/ on that host, with a signed grant.
 func OnTheFarm(address, farmURL string) bool {
-	build, err := url.Parse(address)
-	if err != nil || build.Scheme != "https" || build.User != nil || build.Opaque != "" || build.Host == "" {
+	build, ok := farmShaped(address)
+	if !ok {
 		return false
 	}
 	farmAt, err := url.Parse(farmURL)
@@ -381,6 +381,16 @@ func OnTheFarm(address, farmURL string) bool {
 		return false
 	}
 	return strings.EqualFold(build.Hostname(), farmAt.Hostname()) && portOf(build) == portOf(farmAt)
+}
+
+// farmShaped is address read as a URL, when it is shaped like one the farm may send: https, a host, no user name, nothing
+// opaque. Which host is OnTheFarm's question; a path on this computer is never this shape, on any system.
+func farmShaped(address string) (*url.URL, bool) {
+	u, err := url.Parse(address)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Opaque != "" || u.Host == "" {
+		return nil, false
+	}
+	return u, true
 }
 
 func portOf(u *url.URL) string {

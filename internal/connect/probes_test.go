@@ -96,13 +96,19 @@ func TestASlowFirstProbeDoesNotShortenTheSecondsBudget(t *testing.T) {
 	const budget = 200 * time.Millisecond
 	const firstProbeSpends = 120 * time.Millisecond
 
+	// AMENDED (AN_AGENT_THAT_PASSES_ON_WINDOWS): the second probe is the iOS lister, and on Windows the iOS probe is never
+	// run (TestOnWindowsTheIOSProbeNeverRuns) — so on windows-latest it was never called, and its remaining budget read as
+	// the zero it was declared with: "0s of a 200ms budget". The budget is this seal's subject, not the system, so both
+	// probes run on a system that asks both; and a probe never called is said as that, never read as a budget.
 	var secondRemaining time.Duration
-	probes := connect.ProbeSet(nil,
+	secondRan := false
+	probes := connect.ProbeSetFor("linux", nil,
 		func(ctx context.Context, _ ...string) (string, error) {
 			time.Sleep(firstProbeSpends) // a slow adb
 			return "List of devices attached\n\n", nil
 		},
 		func(ctx context.Context) ([]ios.Device, error) {
+			secondRan = true
 			deadline, ok := ctx.Deadline()
 			if !ok {
 				t.Fatal("a probe must run under a deadline at all")
@@ -112,6 +118,9 @@ func TestASlowFirstProbeDoesNotShortenTheSecondsBudget(t *testing.T) {
 		}, budget, false)
 
 	probes(context.Background())
+	if !secondRan {
+		t.Fatal("instrument guard: the second probe was never run, so there is no budget of its to read")
+	}
 
 	// Shared budget ⇒ the second sees roughly budget−firstProbeSpends (80ms). Its own ⇒ ~200ms.
 	if secondRemaining <= (budget-firstProbeSpends)+(firstProbeSpends/2) {

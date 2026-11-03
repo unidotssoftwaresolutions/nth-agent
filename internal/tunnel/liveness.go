@@ -1,6 +1,9 @@
 package tunnel
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 
 // ── HOW THIS END FINDS OUT ITS TUNNEL IS DEAD, AND KEEPS THE FARM ABLE TO TELL ─────────────────────────────────
 //
@@ -65,3 +68,35 @@ const (
 	PumpHighWater     = 256 * 1024
 	ResponseHighWater = 8 * 1024 * 1024
 )
+
+// liveness is keepAlive's rule, apart from its socket and its ticker: whether the farm has said anything since the ping
+// being waited on, and how long it has been silent.
+//
+// HEARING IS COUNTED, NOT TIMED (AN_AGENT_THAT_PASSES_ON_WINDOWS). It was a timestamp — when the farm last said anything —
+// and a ping was answered when that timestamp was later than the ping's own. Windows' clock moves in steps of up to
+// 15.6 ms, so a pong on a fast link (loopback, a LAN, a farm a few milliseconds away) came back at the very instant its
+// ping went out, read as not later, and a farm answering every ping was called dead after AnswerWithin: the first
+// windows-latest run's "found dead … within 300ms", twice in one healthy second. A count cannot tie: anything heard after
+// the ping went out is heard, however coarse the clock. The clock still times the silence, which is AnswerWithin long.
+type liveness struct {
+	since func() time.Duration // monotonic time since the dial began
+	heard atomic.Int64         // how many times the farm has said anything
+
+	waiting bool          // a ping is out, and nothing has been heard since
+	sentAt  time.Duration // when it went out (since)
+	heardAt int64         // heard when it went out
+}
+
+// hear records that the farm said something: a pong, or any bytes of any frame.
+func (v *liveness) hear() { v.heard.Add(1) }
+
+// tick is one keep-alive tick: ping says to send a ping now; dead, that the farm has been silent for within since the
+// ping it never answered. Neither: a ping is out and the silence is shorter. Only keepAlive's one goroutine calls it.
+func (v *liveness) tick(within time.Duration) (ping, dead bool) {
+	now, heard := v.since(), v.heard.Load()
+	if v.waiting && heard == v.heardAt {
+		return false, now-v.sentAt >= within
+	}
+	v.waiting, v.sentAt, v.heardAt = true, now, heard
+	return true, false
+}

@@ -7,7 +7,8 @@
 //
 //   - started through npx (from npx's cache, or a global install npx ran instead of fetching): `npx nthcase-agent@latest <verb>`;
 //   - a global install run by its own name: `nth-agent <verb>`, which runs that install;
-//   - a project's install: that project's own link to it, `<project>/node_modules/.bin/nth-agent <verb>`;
+//   - a project's install: that project's own link to it, `<project>/node_modules/.bin/nth-agent <verb>`
+//     (`<project>\node_modules\.bin\nth-agent.cmd <verb>` on Windows);
 //   - anything else, or a project whose path a shell would need quoted: the npx form, with @latest.
 //
 // A SENTENCE READ AWAY FROM THIS MACHINE (relayed to the workspace, to a run, to a phone) never carries a path of this
@@ -18,7 +19,9 @@
 package command
 
 import (
+	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"unicode"
@@ -125,16 +128,47 @@ func (i Install) program(here bool) string {
 // spelled: a path that would need quoting (a space, a quote, a `$`, a `%`, a control character) could not sit inside the
 // sentences that quote a command, and the npx form is used instead.
 func projectLink(project string) (string, bool) {
-	if !filepath.IsAbs(project) || !utf8.ValidString(project) {
+	return projectLinkOn(runtime.GOOS, project)
+}
+
+// projectLinkOn is projectLink on the system named, by that system's rules whatever system reads them, so the Windows rule
+// is tested on every system (AN_AGENT_THAT_PASSES_ON_WINDOWS). A TEST SEAM for the system; projectLink passes runtime.GOOS.
+//
+// ON WINDOWS a project is C:\work\app (or \\server\share\app), and npm links its copy as node_modules\.bin\nth-agent.cmd,
+// which cmd.exe and PowerShell both run by that name. Its separator is `\`; `,` and `=` are left out, because cmd.exe splits
+// a line at them. Before, the one Unix rule refused every `\`, so every project install on Windows was told the npx form.
+// A drive-relative path (C:app) or one with `/` in it is not spelled. ON macOS AND LINUX the rule is as it was.
+func projectLinkOn(system, project string) (string, bool) {
+	if !utf8.ValidString(project) {
 		return "", false
 	}
-	link := filepath.Join(project, "node_modules", ".bin", Program)
+	link, quiet := "", ""
+	if system == "windows" {
+		if !windowsAbsolute(project) {
+			return "", false
+		}
+		link, quiet = strings.TrimSuffix(project, `\`)+`\node_modules\.bin\`+Program+".cmd", `\._-+@:`
+	} else {
+		// A path of that system, which separates with `/` alone: path, not filepath, so a Windows test reads it the same.
+		if !path.IsAbs(project) {
+			return "", false
+		}
+		link, quiet = path.Join(project, "node_modules", ".bin", Program), "/._-+@,:="
+	}
 	for _, r := range link {
-		if r >= utf8.RuneSelf || !(unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("/._-+@,:=", r)) {
+		if r >= utf8.RuneSelf || !(unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune(quiet, r)) {
 			return "", false
 		}
 	}
 	return link, true
+}
+
+// windowsAbsolute: C:\… (a drive and its root) or \\server\share\… (a share), and never C:… (a drive's own current folder).
+func windowsAbsolute(p string) bool {
+	if strings.HasPrefix(p, `\\`) {
+		return len(p) > 2 && p[2] != '\\'
+	}
+	return len(p) >= 3 && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z') && p[1] == ':' && p[2] == '\\'
 }
 
 func joined(program, args string) string {

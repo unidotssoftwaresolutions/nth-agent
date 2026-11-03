@@ -361,17 +361,17 @@ func (t *Tunnel) connectAndServe(ctx context.Context, url string, onConnected fu
 	header.Set("X-Agent-Token", t.cfg.Token)
 	// THIS END READS AT ALL TIMES, so the farm may ping it with an answer due (TunnelAccept): see liveness.go.
 	header.Set(AnswersPingsHeader, AnswersPingsValue)
-	// WHEN THE FARM LAST SAID ANYTHING — a pong, or any bytes of any frame — as MONOTONIC time since this dial began: a
-	// wall clock stepped by NTP, or a laptop's sleep, must not make a living farm look dead or a dead one alive.
+	// WHETHER THE FARM HAS SAID ANYTHING since a ping — a pong, or any bytes of any frame — is counted (liveness.go); the
+	// silence is timed in MONOTONIC time since this dial began: a wall clock stepped by NTP, or a laptop's sleep, must not
+	// make a living farm look dead or a dead one alive.
 	started := time.Now()
-	var heard atomic.Int64
-	hear := func() { heard.Store(int64(time.Since(started))) }
+	live := &liveness{since: func() time.Duration { return time.Since(started) }}
 	var queue atomic.Pointer[queuedConn]
 	client := dialClient(t.writeBound(), t.cfg.TLSClientConfig, func(q *queuedConn) { queue.Store(q) })
 	conn, answer, err := websocket.Dial(ctx, url, &websocket.DialOptions{
 		HTTPHeader:     header,
 		HTTPClient:     client,
-		OnPongReceived: func(context.Context, []byte) { hear() },
+		OnPongReceived: func(context.Context, []byte) { live.hear() },
 	})
 	// A REFUSED UPGRADE LEAVES ITS CONNECTION IDLE in this dial's own transport, which nothing will use again — with a
 	// send-queue goroutine attached. The upgraded connection is not in that pool; everything that is goes now.
@@ -387,10 +387,10 @@ func (t *Tunnel) connectAndServe(ctx context.Context, url string, onConnected fu
 	// THE RELAY CONTRACT'S CAP, NOT NONE: Appium's payloads exceed the library's 32 KiB default, and no farm message
 	// exceeds MaxMessageBytes. One that does ends this tunnel without being dispatched, and the tunnel is dialled again.
 	conn.SetReadLimit(t.maxMessageBytes())
-	hear()
+	live.hear()
 
 	life, end := context.WithCancelCause(ctx)
-	l := &link{t: t, conn: conn, queue: queue.Load(), hear: hear, heard: &heard, started: started, life: life, agent: ctx,
+	l := &link{t: t, conn: conn, queue: queue.Load(), live: live, life: life, agent: ctx,
 		requests: newRequestQueue(t.maxQueuedRequests(), t.maxQueuedBytes()), streams: map[string]context.CancelCauseFunc{}}
 
 	onConnected()
@@ -448,10 +448,8 @@ type link struct {
 	t     *Tunnel
 	conn  *websocket.Conn
 	queue *queuedConn
-	// heard is when the farm last said anything, in monotonic nanoseconds since started; hear records it now.
-	heard   *atomic.Int64
-	hear    func()
-	started time.Time
+	// live counts each time the farm says anything, and decides when the keep-alive pings and when it is dead.
+	live *liveness
 	// life is cancelled (cause errTunnelEnded) the moment this connection ends; agent is the process's own context,
 	// which is what a forward runs under — see serveRequests.
 	life  context.Context
@@ -478,13 +476,13 @@ func (l *link) read() error {
 		if err != nil {
 			return err
 		}
-		l.hear()
+		l.live.hear()
 		var message bytes.Buffer
 		for {
 			n, err := reader.Read(buffer)
 			if n > 0 {
 				message.Write(buffer[:n])
-				l.hear()
+				l.live.hear()
 			}
 			if err == io.EOF {
 				break
@@ -613,23 +611,21 @@ func (l *link) keepAlive() {
 	interval, within := l.t.pingInterval(), l.t.answerWithin()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	var outstanding int64 // when the ping being waited on was sent, on heard's monotonic scale; 0 = none
 	for {
 		select {
 		case <-l.life.Done():
 			return
 		case <-ticker.C:
 		}
-		now := int64(time.Since(l.started))
-		if outstanding != 0 && l.heard.Load() <= outstanding {
-			if time.Duration(now-outstanding) >= within {
-				l.dead.Store(true)
-				_ = l.conn.CloseNow()
-				return
-			}
+		ping, dead := l.live.tick(within)
+		if dead {
+			l.dead.Store(true)
+			_ = l.conn.CloseNow()
+			return
+		}
+		if !ping {
 			continue
 		}
-		outstanding = now
 		go func() {
 			ctx, cancel := context.WithTimeout(l.life, within)
 			defer cancel()

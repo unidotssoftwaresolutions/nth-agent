@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -23,12 +23,19 @@ import (
 
 // BuildKind is the kind of build address names, by the last part of its path: ".ipa" or ".apk", whatever letters spell it,
 // or "" with the sentence the build is refused with.
+//
+// TWO KINDS OF ADDRESS, EACH READ AS WHAT IT IS (AN_AGENT_THAT_PASSES_ON_WINDOWS). An address shaped like one the farm may
+// send (farmShaped: https, a host, no user name) is a URL, and its path is the part after the host, before the query. Any
+// other address is a path on this computer — after the hand-over, the agent's own file — and is split as this system
+// splits a path. Read as a URL, C:\Users\…\builds\<name>.apk is the scheme "c" with no path at all, so on Windows every
+// build the agent handed Appium was refused as neither kind; and on any system a folder named with a # or a ? lost the
+// rest of its path to a fragment or a query.
 func BuildKind(address string) (kind, refusal string) {
-	where := address
-	if u, err := url.Parse(address); err == nil {
-		where = u.Path
+	where := filepath.Ext(address)
+	if u, ok := farmShaped(address); ok {
+		where = path.Ext(u.Path)
 	}
-	switch ext := strings.ToLower(path.Ext(where)); ext {
+	switch ext := strings.ToLower(where); ext {
 	case ".ipa", ".apk":
 		return ext, ""
 	case ".zip", ".apks":

@@ -204,7 +204,10 @@ func TestTheCAKeyIsInNoOutputOfAWholeCapture(t *testing.T) {
 			return err
 		}
 		data, err := os.ReadFile(path)
-		outputs["the file "+strings.TrimPrefix(path, m.store.Root)] = data
+		// AMENDED (AN_AGENT_THAT_PASSES_ON_WINDOWS): named with `/` on every system. On Windows the walk gives \locks\…, and
+		// the guards below, which name /locks/, /enabled and /phones.json, missed it: a phone's lock file, empty on every
+		// system (flock and LockFileEx both lock without writing), was counted as an output that searched nothing.
+		outputs["the file "+filepath.ToSlash(strings.TrimPrefix(path, m.store.Root))] = data
 		return err
 	})
 	if err != nil {
