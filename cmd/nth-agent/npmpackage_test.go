@@ -288,6 +288,10 @@ func TestTheShimShipsExactlyTheTargetsTheReleaseBuilds(t *testing.T) {
 	// Node's spellings on the left of the table; the release matrix speaks Go's.
 	nodeArch := map[string]string{"x64": "amd64", "arm64": "arm64", "ia32": "386"}
 
+	// …and Node's spelling of the system, which for Windows is not Go's (AMENDED, AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE:
+	// win32 joined the table, and read as itself it would have been a target the release never builds).
+	nodeOS := map[string]string{"darwin": "darwin", "linux": "linux", "win32": "windows"}
+
 	keys := regexp.MustCompile(`"([a-z0-9]+)-([a-z0-9]+)":`).FindAllStringSubmatch(shim, -1)
 	if len(keys) == 0 {
 		t.Fatal("no platform keys parsed out of the shim's table — the parse is wrong, not the shim")
@@ -299,7 +303,11 @@ func TestTheShimShipsExactlyTheTargetsTheReleaseBuilds(t *testing.T) {
 			t.Fatalf("the shim ships %q and this seal does not know what GOARCH %q is — a target nobody can "+
 				"map to the matrix is a target nobody can prove we build", key[1]+"-"+key[2], key[2])
 		}
-		shipped[key[1]+"/"+arch] = true
+		goos, known := nodeOS[key[1]]
+		if !known {
+			t.Fatalf("the shim ships %q and this seal does not know what GOOS %q is", key[1]+"-"+key[2], key[1])
+		}
+		shipped[goos+"/"+arch] = true
 	}
 
 	built := map[string]bool{}

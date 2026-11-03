@@ -124,8 +124,8 @@ var byName = func() map[string]Capability {
 }()
 
 // Phones is which phones this agent offers right now: the connect loop rewrites it from the rows it publishes every tick,
-// and the tunnel reads it before a session-create reaches Appium. A phone left out with --skip, one on Wi-Fi or an emulator
-// the agent does not offer, or one unplugged since the last tick, is not in it. nil offers none.
+// and the tunnel reads it before a session-create reaches Appium. A phone left out with --skip, one on Wi-Fi the agent does
+// not offer, or one unplugged since the last tick, is not in it. nil offers none.
 type Phones struct {
 	mu    sync.Mutex
 	udids map[string]bool
@@ -359,8 +359,8 @@ func judgeValue(key string, c Capability, value any, farmURL string, phones *Pho
 		}
 		if !phones.Offers(udid) {
 			return fmt.Sprintf("the farm asked to start a session on phone %q, which this agent does not offer — only the "+
-				"phones `connect` says it offers can be driven from the farm (a phone left out with --skip, one reached over "+
-				"Wi-Fi or an emulator is not, unless you offered it) — %s", safe(udid), nothingSent)
+				"phones `connect` says it offers can be driven from the farm (a phone left out with --skip, or one reached over "+
+				"Wi-Fi or the network, is not, unless you offered it) — %s", safe(udid), nothingSent)
 		}
 	case theBuild:
 		address, _ := value.(string)

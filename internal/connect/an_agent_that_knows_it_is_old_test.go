@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -253,6 +254,9 @@ func TestTheUpdateCommandFitsHowTheAgentWasStarted(t *testing.T) {
 }
 
 func TestHowTheAgentWasStartedIsReadFromWhereItsProgramIs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture's paths are Unix paths (/home/ada/...); Windows paths are not this test's subject")
+	}
 	files := map[string]bool{"/work/app/package.json": true, "/work/lib/package.json": true}
 	isFile := func(p string) bool { return files[p] }
 	viaNpx := func(k string) string {

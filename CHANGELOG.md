@@ -23,6 +23,21 @@ example: run it through `npx` with that name in front, the way the README shows.
 - **A system's own error is shown only when asked for.** `connect --verbose` prints it, dim, under the problem it belongs
   to; by default the line says what happened in a few plain words.
 - **`doctor` says how to install adb for this computer:** `brew` on a Mac, and Google's own download on Linux.
+- **The agent runs on Windows, and on Linux on arm64.** `npx` now picks a binary for `win32-x64` and `linux-arm64` too.
+  On Windows it drives Android phones on a USB cable and Android emulators, through your own Appium, the same as on a
+  Mac or Linux; it checks which account runs Appium, adb's server and each phone's live view the way it does there, and
+  keeps the capture key and files to your account alone. iPhones need a Mac: on Windows `connect` says
+  `iOS: needs a Mac` once, as a note, and `doctor` marks each iOS check n/a.
+- **Android emulators are offered.** An emulator running on this computer is your own virtual device, so it is offered
+  like a phone on the cable, and `devices` shows it as an `Android emulator` by its virtual device's name. Phones reached
+  over Wi-Fi or the network are still left out unless you start with `--offer-uncabled-devices`.
+- **adb is found where Android Studio puts it.** On `PATH` first, then in the SDK that `ANDROID_HOME` or
+  `ANDROID_SDK_ROOT` names, then in Android Studio's own folder for this system.
+- **`doctor` checks what Appium needs for Android:** Node.js, the Android SDK (`ANDROID_HOME`) and Java (`JAVA_HOME`),
+  each with the command for this computer — `setx` on Windows, an `export` line on a Mac or Linux.
+- **Every screen writes `Android` and `iOS`.** `connect`'s platform lines said `android:` and `ios:`.
+- **A live view that cannot open is said like any other problem:** what is wrong, that the run is still driven, and how
+  to free the port on this computer — on Windows, the program that holds it, by name.
 
 ## 0.5.3
 

@@ -113,6 +113,7 @@ func TestTheReleaseBodyTypesNoPackageName(t *testing.T) {
 // release.yml and executed with bash on a scratch copy — once as written, once with a token misspelt. A refusal that
 // is present and wrong (a grep for the wrong pattern) passes any seal that only looks for the word "refusing".
 func TestTheReleaseNotesStepRefusesASurvivingToken(t *testing.T) {
+	skipWorkflowStepsOnWindows(t)
 	for _, tool := range []string{"bash", "sed", "grep", "node"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Fatalf("this seal runs release.yml's own release-notes step, which needs %s — as the release runner has. "+

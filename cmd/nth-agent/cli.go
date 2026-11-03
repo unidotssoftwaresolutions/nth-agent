@@ -93,8 +93,9 @@ var verbs = []verbSpec{
 	{Name: "connect", Flags: []flagSpec{
 		{Name: "--farm", TakesValue: true}, {Name: "--appium", TakesValue: true},
 		{Name: "--token", TakesValue: true}, {Name: "--skip", TakesValue: true},
-		// ONLY PHONES ON THIS MACHINE'S USB CABLE ARE OFFERED unless this is given: emulators, and phones reached over Wi-Fi
-		// or the network, are named as left out (A_MACHINE_THAT_STAYS_THE_CUSTOMERS, decision 1).
+		// ONLY PHONES ON THIS MACHINE'S USB CABLE ARE OFFERED unless this is given: phones reached over Wi-Fi or the network
+		// are named as left out (A_MACHINE_THAT_STAYS_THE_CUSTOMERS, decision 1). An emulator running on this machine is
+		// offered without it (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): it is the person's own virtual device.
 		{Name: "--offer-uncabled-devices"},
 		// A CAPTURE KEEPS TO THE INTERNET unless this is given: the capture proxy refuses this machine and its local network
 		// (internal/netcap/destination.go), and with it connect says on screen that they are open.

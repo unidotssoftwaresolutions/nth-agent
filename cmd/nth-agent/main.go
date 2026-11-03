@@ -66,6 +66,9 @@ Usage:
 flags (both commands):
   --skip PLATFORM   do not ask about this platform on this machine (repeatable, comma-ok: android, ios).
                     The platform reports "not asked" — a deliberate decision, not a failure.
+  --offer-uncabled-devices   offer phones reached over Wi-Fi or the network too (devices, doctor, connect).
+                    Without it, only phones on this machine's USB cable, and the Android emulators
+                    running on this machine, are offered.
 
 connect flags:
   --farm URL      the farm's base URL (or NTH_AGENT_FARM). Must be https:// — a plain http URL would
@@ -353,7 +356,7 @@ func runDoctor(inv *invocation, stdout, stderr io.Writer) int {
 		})
 	report := doctor.Diagnose(ctx, env, outcomes)
 	// NETWORK CAPTURE ON THIS MACHINE, read from its state folder alone — the certificate, never the key.
-	if configDir, err := os.UserConfigDir(); err == nil {
+	if configDir, err := state.ConfigDir(); err == nil {
 		status := capture.ReadStatus(capture.StoreIn(configDir), time.Now())
 		report.Capture = &status
 	}
@@ -527,7 +530,7 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 
 	offerUncabled := inv.Bools[inventory.OfferUncabledFlag]
 	var configDir string
-	configDir, err = os.UserConfigDir()
+	configDir, err = state.ConfigDir()
 	if err != nil {
 		refuse(stderr, noColor, ui.Problem{What: "cannot locate the user config directory: " + err.Error(),
 			Why: "The agent keeps this machine's identity there, so it cannot start without one.",

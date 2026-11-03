@@ -23,6 +23,35 @@ to leave a platform alone (it then reports *not asked*, which is a decision rath
 The platform is a **field on a device**, never a verb: there is no `ios-devices`, no required
 `--platform`. Android comes from `adb`; iOS comes from `go-ios` talking to usbmuxd.
 
+## Which machine serves what
+
+| This machine | Android phones on a USB cable | Android emulators running on it | iPhones |
+|---|---|---|---|
+| macOS | yes | yes | yes — WebDriverAgent is built with Xcode (`setup-ios`) |
+| Linux | yes | yes | listed over usbmuxd; WebDriverAgent is built with Xcode, so driving one needs a Mac |
+| Windows | yes | yes | no — `connect` says once, as a note, `iOS: needs a Mac`, and `doctor` marks each iOS check n/a |
+
+Android needs the same things everywhere: adb, Appium 2 with its `uiautomator2` driver, Node.js to run Appium, the
+Android SDK named by `ANDROID_HOME`, and Java named by `JAVA_HOME`. The agent installs none of them — it is your
+machine — and `doctor` checks each one and gives the command for the system it runs on.
+
+**adb does not have to be on your `PATH`.** The agent looks on `PATH` first, then in the SDK that `ANDROID_HOME` or
+`ANDROID_SDK_ROOT` names, then where Android Studio puts the SDK: `%LOCALAPPDATA%\Android\Sdk` on Windows (read from
+`LOCALAPPDATA`), `~/Library/Android/sdk` on macOS, `~/Android/Sdk` on Linux.
+
+### Android on Windows
+
+1. Install Android Studio from https://developer.android.com/studio, open it once, and let it install the SDK. Start
+   an emulator from its Device Manager, or plug in a phone with USB debugging on (some phones need their maker's USB
+   driver on Windows).
+2. Install Node.js (`winget install OpenJS.NodeJS.LTS`), then, in a new terminal, Appium and its Android driver:
+   `npm i -g appium` and `appium driver install uiautomator2`.
+3. Point Appium at the SDK and at Android Studio's own Java, then open a new terminal so they are read:
+   `setx ANDROID_HOME "%LOCALAPPDATA%\Android\Sdk"` and `setx JAVA_HOME "C:\Program Files\Android\Android Studio\jbr"`.
+4. Start `appium` in that terminal, and in another one run `npx {{PACKAGE}}@latest doctor --appium http://127.0.0.1:4723`.
+   Each line it marks `✗` says what to do. Then `connect`, as below; in PowerShell 7 the token goes in at a prompt, so it
+   reaches neither the command line nor your history: `$env:NTH_AGENT_TOKEN = Read-Host -MaskInput 'workspace agent token'`.
+
 ### `devices` — what is attached
 
 The inventory, and the three outcomes below are its whole vocabulary. Exit 0 when at least one probe
@@ -33,7 +62,8 @@ established the truth; **zero devices attached is a success**.
 Every requirement a run on this machine depends on, one line each, in this order: **unusable devices** (the
 phones it saw and cannot use, and why), **devices left out** (the ones it saw and does not offer because they are
 not on this machine's USB cable — see `connect`, below), **adb** and the **adb server** (and whose it is), **Appium**, the **Appium endpoint** you
-give it, **Appium driver uiautomator2** and **Appium driver xcuitest**, the **Xcode command-line tools**, **iOS
+give it, **Appium driver uiautomator2**, **Node.js**, the **Android SDK** and **Java** (each with the command for this
+system), **Appium driver xcuitest**, the **Xcode command-line tools**, **iOS
 Developer Mode**, the **iOS signing identity**, the **iOS provisioning profile**, the **iOS WebDriverAgent
 project** and the **iOS WebDriverAgent port** — and last, one **live view** line per phone (*Watching a run on
 your phone*, below). Each is reported in one of six states, and each says **what it did not establish** as well
@@ -155,8 +185,11 @@ token is never written to disk or into any output either way.
 iPhones are reported as **attached and not offered**, with the reason — a phone we cannot sign for is a
 phone we will not pretend we can drive.
 
-**Only phones on this machine's USB cable are offered.** An emulator, or a phone that adb or the Apple device
-daemon reaches over Wi-Fi or the network (`adb connect`, wireless debugging, an iPhone shown on Wi-Fi), is left
+**Only phones on this machine's USB cable are offered — and the Android emulators running on it.** An emulator
+running here is your own virtual device on your own desk, so it is offered like a phone on the cable: `devices` shows
+it as an `Android emulator`, by its virtual device's name. adb names it `emulator-5554` (its console port on this
+machine), and only an adb server on this machine's `127.0.0.1`, run by you, is ever asked. A phone that adb or the Apple
+device daemon reaches over Wi-Fi or the network (`adb connect`, wireless debugging, an iPhone shown on Wi-Fi) is left
 out: `connect` names each one once, with how it is reached, `devices` and `doctor` list them, and the farm is not
 told about them at all. To offer them too, say so:
 
@@ -334,7 +367,7 @@ shown is still driven.
 A capture run records your test app's network traffic, so each request and response appears on the run's Network
 tab. **It is off.** It needs three yeses, each from a person: this machine (`npx {{PACKAGE}}@latest capture enable`, which explains
 all of this first and asks you to type `ENABLE`), each phone (`npx {{PACKAGE}}@latest capture setup`), and the scenario, which asks
-for capture. Android phones only, on macOS and Linux.
+for capture. Android phones only, with the agent on macOS, Linux or Windows.
 
 ```
 npx {{PACKAGE}}@latest capture enable          # explains what capture does, asks you to type ENABLE, then makes this machine's CA
@@ -389,7 +422,8 @@ it.
 **Backups.** The capture folder holds the key and, for an hour at most, capture files, so it is kept out of backups:
 on a Mac it carries Time Machine's own exclusion (the one `tmutil addexclusion` sets, set on the folder itself, so
 nothing about Time Machine changes), and on Linux it holds a `CACHEDIR.TAG`, which restic, borg, Déjà Dup and
-GNU tar (asked to skip caches) leave out. A backup made before that, or by a tool that ignores both, may still hold a copy of
+GNU tar (asked to skip caches) leave out. On Windows the folder is under Local AppData (`%LOCALAPPDATA%\nth-agent`), which
+does not roam with a profile and which File History leaves out unless you add it, and it holds the same `CACHEDIR.TAG`. A backup made before that, or by a tool that ignores both, may still hold a copy of
 the key and of capture files; deleting the folder does not reach that copy. Removing the certificate from every
 phone is what ends a copied key's use.
 
@@ -405,7 +439,7 @@ printed.
 send traffic through the capture proxy while a capture runs; a connection from any other account is refused unread.
 The proxy listens on this machine's loopback address, which every account here can reach, so before it reads a byte of
 a connection it asks the machine's own kernel which account opened it (`/proc/net/tcp` on Linux, the
-`net.inet.tcp.pcblist64` list on macOS). A capture, and `capture setup`'s check, start only once that question has
+`net.inet.tcp.pcblist64` list on macOS, and on Windows the TCP table's owning process, then that process's account). A capture, and `capture setup`'s check, start only once that question has
 been answered for a connection of this agent's own.
 
 `capture enable` exits 0 once capture is on and 2 when `ENABLE` was not typed (nothing is changed); `capture setup`
@@ -470,8 +504,10 @@ Two rules the types enforce rather than document:
 
 Wherever a flag and a variable name the same thing, **the flag wins and the variable is the fallback** —
 every pairing below is read exactly that way, once, at startup. Nothing else is read from the
-environment. (The binaries the doctor looks for — `adb`, `appium`, `xcodebuild` — are found on `PATH`,
-which is your shell's mechanism rather than this agent's variable. adb's own `ADB_SERVER_SOCKET`,
+environment. (The binaries the doctor looks for — `adb`, `appium`, `node`, `java`, `xcodebuild` — are found on `PATH`,
+which is your shell's mechanism rather than this agent's variable; adb is also looked for in the Android SDK that
+`ANDROID_HOME`, `ANDROID_SDK_ROOT` or Android Studio's folder under `LOCALAPPDATA` holds, and `doctor` reads
+`JAVA_HOME`, the variables Appium's Android driver reads. adb's own `ADB_SERVER_SOCKET`,
 `ANDROID_ADB_SERVER_ADDRESS` and `ANDROID_ADB_SERVER_PORT`, which adb reads anyway, are read only to find the server
 they name and ask who runs it; one that points adb off this machine's `127.0.0.1` means adb is not used.)
 
@@ -479,7 +515,7 @@ they name and ask who runs it; one that points adb off this machine's `127.0.0.1
 |---|---|---|---|
 | `--json` | — | devices, doctor | the same facts, machine-readable |
 | `--skip PLATFORM` | — | devices, doctor, connect | leave a platform alone (repeatable; `android`, `ios`) — it reports *not asked* |
-| `--offer-uncabled-devices` | — | devices, doctor, connect | offer emulators and phones reached over Wi-Fi or the network too; without it only phones on this machine's USB cable are offered |
+| `--offer-uncabled-devices` | — | devices, doctor, connect | offer phones reached over Wi-Fi or the network too; without it only phones on this machine's USB cable, and the emulators running on it, are offered |
 | `--appium URL` | `NTH_AGENT_APPIUM` | doctor, connect | the local Appium endpoint, on this machine — probed, or offered for runs; never guessed, and used only when your account runs it |
 | `--why` | — | doctor | print every caveat, including the ones a passing check states |
 | `--no-color` | `NO_COLOR` (presence, not value) | devices, doctor, connect | plain output; the flag wins over the variable |
@@ -527,8 +563,8 @@ if the two disagree. Its second line says where the third-party notices are (bel
 **Node 18 or newer**, which is what `npx` itself needs. The agent is a Go binary — Node runs the one-file shim
 that picks it, and nothing else.
 
-**What you get if your machine is not one of the three targets** — `darwin-arm64`, `darwin-x64`, `linux-x64` —
-is a sentence saying so and naming what is built, not a broken install.
+**What you get if your machine is not one of the five targets** — `darwin-arm64`, `darwin-x64`, `linux-x64`,
+`linux-arm64`, `win32-x64` — is a sentence saying so and naming what is built, not a broken install.
 
 ⚠️ **npm verifies what it downloads and there is no separate checksum step for you to run.** Every tarball the
 registry serves carries an integrity hash that npm checks before it unpacks anything; a corrupted or substituted
@@ -620,8 +656,8 @@ repository, and a file there (`../nth-agent.server-sources.json`) says where eac
 repository's CI included, they skip, and each says in its skip line that the agent was not held to that side in that
 run.
 
-CI builds and tests on Linux and cross-compiles **darwin/arm64, darwin/amd64 and linux/amd64** — the
-platforms this repo claims are exactly the platforms it compiles.
+CI builds and tests on Linux, runs the unit tests on Windows too, and cross-compiles **darwin/arm64, darwin/amd64,
+linux/amd64, linux/arm64 and windows/amd64** — the platforms this repo claims are exactly the platforms it compiles.
 
 **`THIRD_PARTY_NOTICES.txt` is generated, never edited by hand.** `go test ./...` fails while it is not what the
 release's programs link — a module missing, a module no longer linked, a version or a licence text moved — and names

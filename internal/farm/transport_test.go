@@ -129,6 +129,9 @@ func TestEveryReadOfTheTokenIsClassified(t *testing.T) {
 		// stand-in machines, and its test farm checks the one it was given.
 		"secrets.go": "loadtest/fleet: reads the load-test token from NTH_AGENT_LOADTEST_TOKEN only (no flag) into a Credential whose every fmt verb prints its length, and hands its text only to farm.Client and the tunnel's upgrade — this file's two exits; sealed by loadtest/fleet's TestTheTokenIsNeverPrinted",
 		"standin.go": "loadtest/farmstandin, a test farm on loopback: compares the X-Agent-Token header with the token its test gave it and writes it nowhere",
+		// AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE: Windows' own word. A windows.Token is a PROCESS's access token, which
+		// names the account a process runs as; the workspace token is not in reach of this file.
+		"peer_windows.go": "internal/netcap on Windows: opens another process's ACCESS TOKEN (windows.Token, OpenProcessToken) only to read which account that process runs as; it never sees the workspace token and has no exit",
 	}
 
 	root := filepath.Join("..", "..")

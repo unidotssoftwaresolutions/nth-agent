@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -131,10 +132,13 @@ func connectChildTo(t *testing.T, farmURL string, output io.Writer, extra ...str
 	args := append([]string{"-test.run=^TestConnectAsItsOwnChild$", "-test.count=1", "--", "connect", "--farm", farmURL,
 		"--skip", "android,ios"}, extra...)
 	cmd := exec.Command(os.Args[0], args...)
+	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): on Windows the agent's folder is under LOCALAPPDATA, so the
+	// child gets its own there too.
 	env := []string{"NTH_AGENT_TEST_CONNECT_CHILD=1", "NTH_AGENT_TOKEN=sk-agent-goodbye-test", "HOME=" + home,
-		"XDG_CONFIG_HOME=" + filepath.Join(home, ".config")}
+		"XDG_CONFIG_HOME=" + filepath.Join(home, ".config"), "LOCALAPPDATA=" + filepath.Join(home, "AppData", "Local")}
 	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "NTH_AGENT_") && !strings.HasPrefix(kv, "HOME=") && !strings.HasPrefix(kv, "XDG_CONFIG_HOME=") {
+		if !strings.HasPrefix(kv, "NTH_AGENT_") && !strings.HasPrefix(kv, "HOME=") && !strings.HasPrefix(kv, "XDG_CONFIG_HOME=") &&
+			!strings.HasPrefix(strings.ToUpper(kv), "LOCALAPPDATA=") {
 			env = append(env, kv)
 		}
 	}
@@ -177,6 +181,9 @@ func ended(t *testing.T, cmd *exec.Cmd, out *lockedBuffer) (int, time.Duration) 
 }
 
 func TestCtrlCSaysGoodbyeOnceTheLoopHasStopped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no SIGINT, SIGTERM or SIGHUP to send a process; the ubuntu and macOS runs hold this")
+	}
 	for _, s := range []struct {
 		signal syscall.Signal
 		code   int
@@ -226,6 +233,9 @@ func nodeIDIn(t *testing.T, calls []string) string {
 
 // BOUNDED, AND SAID IN ONE LINE: a farm that never answers, one older than the door (404, empty body), and one that refuses.
 func TestAGoodbyeTheFarmDoesNotTakeCostsOneLineAndTheBound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no SIGINT, SIGTERM or SIGHUP to send a process; the ubuntu and macOS runs hold this")
+	}
 	for name, leave := range map[string]func(w http.ResponseWriter, r *http.Request){
 		"no answer":             func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() },
 		"a farm without a door": func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) },

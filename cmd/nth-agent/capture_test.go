@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,9 @@ func TestCaptureEnableChangesNothingUnlessENABLEIsTyped(t *testing.T) {
 }
 
 func TestCaptureEnableWithENABLEMakesTheCAAndTheMark(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this asserts Unix file modes; on Windows the same rule is an access list for this account alone, held by internal/private's Windows test")
+	}
 	dir := t.TempDir()
 	store := capture.StoreIn(dir)
 	code, out, errOut := runCaptureCommand(t, benchSeams(dir), "ENABLE\n", "enable")

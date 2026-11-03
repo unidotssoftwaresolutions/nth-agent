@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/private"
 )
 
 // ── THE STATE FOLDER ────────────────────────────────────────────────────────────────────────────────────────────
@@ -255,7 +256,7 @@ func writeOwn(path string, value any) error {
 	name := temporary.Name()
 	_, werr := temporary.Write(append(data, '\n'))
 	cerr := temporary.Close()
-	if err := errors.Join(werr, cerr, os.Chmod(name, 0o600)); err != nil {
+	if err := errors.Join(werr, cerr, private.File(name)); err != nil {
 		_ = os.Remove(name)
 		return err
 	}
@@ -278,10 +279,5 @@ func readOwn(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-// ownFolder makes dir and leaves it 0700 — and the capture folder above it too.
-func ownFolder(dir string) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	return os.Chmod(dir, 0o700)
-}
+// ownFolder makes dir and keeps it to this account (internal/private: 0700, or this account's access list on Windows).
+func ownFolder(dir string) error { return private.Folder(dir) }

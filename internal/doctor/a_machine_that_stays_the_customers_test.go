@@ -91,7 +91,7 @@ func TestAnAppiumAnotherAccountRunsIsNamedForWhatItIs(t *testing.T) {
 func TestDoctorNamesTheLeftOutPhonesAndTheFlag(t *testing.T) {
 	outcomes := []inventory.Outcome{
 		inventory.WithLeftOut(inventory.Answered(inventory.Android, []inventory.Offerable{{ID: "R5CT30ABCDE"}}, nil),
-			[]inventory.LeftOut{{ID: "emulator-5554", How: "an emulator"}}),
+			[]inventory.LeftOut{{ID: "192.0.2.10:5555", How: "reached over the network (adb connect)"}}),
 		inventory.WithLeftOut(inventory.Answered(inventory.IOS, nil, nil),
 			[]inventory.LeftOut{{ID: "00008030-WIFI", How: "reached over Wi-Fi or the network"}}),
 	}
@@ -100,7 +100,9 @@ func TestDoctorNamesTheLeftOutPhonesAndTheFlag(t *testing.T) {
 	if c.State.Blocking() && !c.Advisory {
 		t.Fatalf("a left-out phone is a note, not a fault: %q", c.State)
 	}
-	for _, want := range []string{"emulator-5554 (android) is an emulator", "00008030-WIFI (ios) is reached over Wi-Fi or the network", "only phones on this machine's USB cable"} {
+	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): an emulator on this machine is offered now, so the Android
+	// phone left out here is a network one, and the platforms are written Android and iOS.
+	for _, want := range []string{"192.0.2.10:5555 (Android) is reached over the network (adb connect)", "00008030-WIFI (iOS) is reached over Wi-Fi or the network", "only phones on this machine's USB cable"} {
 		if !strings.Contains(c.Detail, want) {
 			t.Fatalf("the detail says %q, got %q", want, c.Detail)
 		}

@@ -85,7 +85,16 @@ func stepsFrom(t *testing.T, workflow, first, before string) []string {
 }
 
 func agentArchive(t *testing.T, binary string) []byte {
+	return agentArchiveFor(t, "linux_amd64", binary)
+}
+
+// agentArchiveFor is the archive release.yml packs for target: its binary is nth-agent.exe for Windows, nth-agent elsewhere.
+func agentArchiveFor(t *testing.T, target, binary string) []byte {
 	t.Helper()
+	program := "nth-agent"
+	if strings.HasPrefix(target, "windows_") {
+		program += ".exe"
+	}
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -93,7 +102,7 @@ func agentArchive(t *testing.T, binary string) []byte {
 		name string
 		body string
 		mode int64
-	}{{"nth-agent", binary, 0o755}, {"README.md", "readme\n", 0o644}, {"THIRD_PARTY_NOTICES.txt", "notices\n", 0o644},
+	}{{program, binary, 0o755}, {"README.md", "readme\n", 0o644}, {"THIRD_PARTY_NOTICES.txt", "notices\n", 0o644},
 		{"LICENSE", "licence\n", 0o644}, {"NOTICE", "notice\n", 0o644}} {
 		if err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: f.mode, Size: int64(len(f.body))}); err != nil {
 			t.Fatal(err)
@@ -149,7 +158,7 @@ exit 3
 func TestThePublishShipsOnlyTheArchivesReleaseYmlBuilt(t *testing.T) {
 	needTools(t, "bash", "tar", "cmp", "find")
 	const tag, commit, repo = "v0.3.0", "0123456789abcdef0123456789abcdef01234567", "fixture/nth-agent"
-	targets := []string{"darwin_arm64", "darwin_amd64", "linux_amd64"}
+	targets := []string{"darwin_arm64", "darwin_amd64", "linux_amd64", "linux_arm64", "windows_amd64"}
 	names := stepsFrom(t, "publish-npm.yml", "Fetch the release built by release.yml", "Put the notices and the changelog in the package")
 	var scripts []string
 	for _, name := range names {
@@ -166,14 +175,14 @@ func TestThePublishShipsOnlyTheArchivesReleaseYmlBuilt(t *testing.T) {
 		work, release, built, stub := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
 		for _, target := range targets {
 			archive := "nth-agent_" + tag + "_" + target + ".tar.gz"
-			genuine := agentArchive(t, "built by release.yml for "+target+"\n")
+			genuine := agentArchiveFor(t, target, "built by release.yml for "+target+"\n")
 			artifact := filepath.Join(built, strings.ReplaceAll(target, "_", "-"))
 			writeFile(t, filepath.Join(artifact, archive), genuine, 0o644)
 			writeFile(t, filepath.Join(artifact, archive+".sha256"), []byte("whatever  "+archive+"\n"), 0o644)
 			switch target {
 			case f.missing:
 			case f.swap:
-				writeFile(t, filepath.Join(release, archive), agentArchive(t, "NOT built by release.yml\n"), 0o644)
+				writeFile(t, filepath.Join(release, archive), agentArchiveFor(t, target, "NOT built by release.yml\n"), 0o644)
 			default:
 				writeFile(t, filepath.Join(release, archive), genuine, 0o644)
 			}
@@ -222,6 +231,9 @@ func TestThePublishShipsOnlyTheArchivesReleaseYmlBuilt(t *testing.T) {
 	}
 	for _, target := range targets {
 		bin := "nth-agent-" + strings.ReplaceAll(target, "_", "-")
+		if strings.HasPrefix(target, "windows_") {
+			bin += ".exe" // AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): Windows runs a program only by its extension
+		}
 		if string(bins[bin]) != "built by release.yml for "+target+"\n" {
 			t.Fatalf("the package's %s is not the binary release.yml built (%q):\n%s", bin, bins[bin], out)
 		}
@@ -241,7 +253,7 @@ func TestThePublishShipsOnlyTheArchivesReleaseYmlBuilt(t *testing.T) {
 	for _, target := range targets {
 		refused("a release whose "+target+" archive is not the one release.yml built", fixture{swap: target})
 	}
-	refused("a release with an archive release.yml never built", fixture{extra: "linux_arm64"})
+	refused("a release with an archive release.yml never built", fixture{extra: "freebsd_amd64"})
 	refused("a release missing an archive release.yml built", fixture{missing: "darwin_amd64"})
 	refused("a tag whose commit no successful release.yml run built", fixture{noRun: true})
 	refused("a run whose artifacts can no longer be downloaded", fixture{artifactsGone: true})

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/capture"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/state"
 )
 
 // ── `nth-agent capture enable | setup [SERIAL] | disable` ───────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ type captureSeams struct {
 }
 
 func realCaptureSeams() captureSeams {
-	return captureSeams{configDir: os.UserConfigDir, adb: capture.RealAdb, now: time.Now, goos: runtime.GOOS,
+	return captureSeams{configDir: state.ConfigDir, adb: capture.RealAdb, now: time.Now, goos: runtime.GOOS,
 		hostname: os.Hostname, lockWait: time.Minute}
 }
 

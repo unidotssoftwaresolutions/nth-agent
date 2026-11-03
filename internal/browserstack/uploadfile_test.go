@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -343,6 +344,9 @@ func TestEachWayAPathIsNotABuildHasItsOwnSentence(t *testing.T) {
 }
 
 func TestAnUnreadableBuildSaysSoRatherThanSayingItIsMissing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 000 does not make a file unreadable on Windows; the ubuntu and macOS runs hold this")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads everything, so this machine cannot produce an unreadable file")
 	}

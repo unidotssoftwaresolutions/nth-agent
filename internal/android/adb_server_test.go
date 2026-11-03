@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,6 +81,9 @@ func TestAnAdbServerAnotherAccountRunsIsNeverAsked(t *testing.T) {
 }
 
 func TestThisAccountsOwnAdbServerIsUsed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake adb here is a #!/bin/sh script, which Windows cannot run; the ubuntu and macOS runs hold this, and the adb search on Windows is held by an_agent_that_drives_android_on_any_machine_test.go")
+	}
 	mark := adbStub(t)
 	adbServerHeldByThisTest(t)
 
@@ -92,6 +96,9 @@ func TestThisAccountsOwnAdbServerIsUsed(t *testing.T) {
 
 // NOTHING LISTENING is the ordinary first run: adb starts its own server, as this account.
 func TestNoAdbServerYetIsNotARefusal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake adb here is a #!/bin/sh script, which Windows cannot run; the ubuntu and macOS runs hold this, and the adb search on Windows is held by an_agent_that_drives_android_on_any_machine_test.go")
+	}
 	mark := adbStub(t)
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {

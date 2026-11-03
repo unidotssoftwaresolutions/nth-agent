@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +92,9 @@ func TestTheSubjectHashIsNotMitmproxys(t *testing.T) {
 
 // THE KEY IS 0600 IN A 0700 FOLDER, and a CA anyone else on the machine could read is not used.
 func TestTheKeyAndItsFolderAreThisUsersOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this asserts Unix file modes; on Windows the same rule is an access list for this account alone, held by internal/private's Windows test")
+	}
 	ca, dir := newTestCA(t)
 	for path, want := range map[string]os.FileMode{dir: 0o700, filepath.Join(dir, caKeyFile): 0o600, filepath.Join(dir, caCertFile): 0o600} {
 		info, err := os.Lstat(path)

@@ -156,6 +156,12 @@ type Env struct {
 	AdbServer      func() (address, refusal string)
 	AdbServerOwner func(net.Conn) (uid int, found bool)
 
+	// SDK is where the Android SDK, adb and Java are looked for: this process's environment (ANDROID_HOME,
+	// ANDROID_SDK_ROOT, LOCALAPPDATA, JAVA_HOME), PATH, the file system and the home folder — android.ThisMachine in
+	// production. nil = this build cannot ask: adb is then looked for on PATH alone, and the Android SDK and Java checks
+	// say they could not tell.
+	SDK *android.Where
+
 	// AppiumURL is what the person told us, or empty. We do not guess one.
 	AppiumURL string
 	// System is the system this agent runs on (runtime.GOOS), so an install step is said in the words of THIS machine:
@@ -197,9 +203,11 @@ func RealEnv(appiumURL string, appiumStatus func(context.Context, string) error,
 	iosWdaBundleID, iosTeamID, iosTeamIDSource string, iosProfiles func(ctx context.Context) ([]ios.Profile, error),
 	iosIdentities func(ctx context.Context) ([]ios.Identity, error),
 	wdaProjectPath string, iosLocalPortStatus func(ctx context.Context, port uint16) wda.RunnerStatus) Env {
+	sdk := android.ThisMachine()
 	return Env{
 		LookPath: exec.LookPath,
 		System:   runtime.GOOS,
+		SDK:      &sdk,
 		Run: func(ctx context.Context, name string, args ...string) (string, error) {
 			out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 			return string(out), err

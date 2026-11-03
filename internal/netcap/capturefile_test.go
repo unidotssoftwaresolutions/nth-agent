@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,9 @@ func readHAR(t *testing.T, data []byte) (entries []map[string]any, comment strin
 }
 
 func TestTheCaptureFileIsOwnerOnlyNamedByItsLeaseAndWholeAfterEveryEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this asserts Unix file modes; on Windows the same rule is an access list for this account alone, held by internal/private's Windows test")
+	}
 	dir := filepath.Join(t.TempDir(), "files")
 	rec, err := NewRecording(dir, lease1, "dev", nil)
 	if err != nil {

@@ -281,7 +281,8 @@ func TestTheLoopNarratesChangesNotTicks(t *testing.T) {
 	// The platform situation is printed ONCE (nothing changed across 5 ticks), not per heartbeat.
 	// (Counted on one distinctive line — an earlier draft counted a phrase BOTH platform lines share
 	// and read one narration pass as two.)
-	if got := strings.Count(out.String(), "ios: 1 usable"); got != 1 {
+	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): every screen writes the platform iOS.
+	if got := strings.Count(out.String(), "iOS: 1 usable"); got != 1 {
 		t.Fatalf("an unchanged state prints once, got %d prints in %q", got, out.String())
 	}
 }

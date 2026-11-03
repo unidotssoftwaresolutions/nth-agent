@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/ios"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/liveview"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/localconn"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/wda"
 )
 
@@ -48,6 +48,8 @@ func Diagnose(ctx context.Context, env Env, outcomes []inventory.Outcome) Report
 	report.Checks = append(report.Checks, adbBinary(ctx, env), adbServer(env))
 	report.Checks = append(report.Checks, appiumBinary(ctx, env), appiumEndpoint(ctx, env))
 	report.Checks = append(report.Checks, appiumDriver(ctx, env, "uiautomator2", inventory.Android, outcomes))
+	// WHAT APPIUM'S ANDROID DRIVER NEEDS ON THIS MACHINE, said in this system's own commands (android_sdk.go).
+	report.Checks = append(report.Checks, nodeJS(ctx, env, outcomes), androidSDK(env, outcomes), java(ctx, env, outcomes))
 	// iOS gets the SAME shape Android gets, scoped the same way. It used to get one note that returned Unknown and
 	// declined — and whose remedy said the phone "is not offered for runs", which was false: this agent publishes
 	// iOS offerables through farm.AttachDevices and the product offers them. A diagnostic that contradicts the
@@ -160,24 +162,24 @@ func liveViews(ctx context.Context, env Env, outcomes []inventory.Outcome) []Che
 func leftOutDevices(outcomes []inventory.Outcome) Check {
 	c := Check{
 		Name: "devices left out",
-		Need: "the agent offers the farm only phones on this machine's USB cable unless " + inventory.OfferUncabledFlag +
-			" is given; an emulator or a phone reached over Wi-Fi or the network is left out (internal/android/probe.go, internal/ios/probe.go)",
+		Need: "the agent offers the farm only phones on this machine's USB cable, and the emulators running on it, unless " +
+			inventory.OfferUncabledFlag + " is given; a phone reached over Wi-Fi or the network is left out (internal/android/probe.go, internal/ios/probe.go)",
 		Limits: "adb and usbmuxd say how each device is reached; this check repeats what they said in this invocation",
 	}
 	var details []string
 	for _, o := range outcomes {
 		for _, d := range o.LeftOut() {
-			details = append(details, fmt.Sprintf("%s (%s) is %s", d.ID, o.Platform(), d.How))
+			details = append(details, fmt.Sprintf("%s (%s) is %s", d.ID, platformName(o.Platform()), d.How))
 		}
 	}
 	if len(details) == 0 {
 		c.State = NotRequired
-		c.Detail = "every device the probes saw is on this machine's USB cable, or " + inventory.OfferUncabledFlag + " offers them all"
+		c.Detail = "every device the probes saw is on this machine's USB cable or an emulator running on it, or " + inventory.OfferUncabledFlag + " offers them all"
 		return c
 	}
 	c.State = Missing
 	c.Advisory = true
-	c.Detail = strings.Join(details, "; ") + " — the agent offers the farm only phones on this machine's USB cable"
+	c.Detail = strings.Join(details, "; ") + " — the agent offers the farm only phones on this machine's USB cable and the emulators running on it"
 	c.Remedy = UncabledRemedy()
 	return c
 }
@@ -197,6 +199,9 @@ func AdbInstallRemedy(system string) string {
 		return "brew install --cask android-platform-tools"
 	case "linux":
 		return linux
+	case "windows":
+		return "install Android Studio from https://developer.android.com/studio — its SDK puts adb in " +
+			`%LOCALAPPDATA%\Android\Sdk\platform-tools, where the agent finds it`
 	}
 	return "install Android platform-tools and put adb on PATH (on a Mac: brew install --cask android-platform-tools; on Linux: " + linux + ")"
 }
@@ -263,18 +268,34 @@ func unusableDevices(outcomes []inventory.Outcome) Check {
 func adbBinary(ctx context.Context, env Env) Check {
 	c := Check{
 		Name: "adb",
-		Need: "the Android probe shells out to `adb` by bare name (internal/android/adb.go), so it must resolve on PATH",
+		Need: "the Android probe shells out to `adb`, found on PATH or in the Android SDK (internal/android/adbpath.go)",
 	}
-	path, err := env.LookPath("adb")
-	if err != nil {
+	path, from, found := "", "", false
+	if env.SDK != nil {
+		where := *env.SDK
+		where.LookPath = env.LookPath
+		if adb, ok := android.FindAdb(where); ok {
+			path, from, found = adb.Path, adb.From, true
+		}
+	} else if p, err := env.LookPath("adb"); err == nil {
+		path, from, found = p, "on PATH", true
+	}
+	if !found {
 		c.State = Missing
-		c.Detail = "not on PATH"
+		c.Detail = "not on PATH, and not in the Android SDK"
 		c.Remedy = AdbInstallRemedy(env.System)
 		return c
 	}
 	c.State = Satisfied
 	c.Detail = path
-	if out, err := env.Run(ctx, "adb", "version"); err == nil {
+	if from != "on PATH" {
+		c.Detail = path + " (" + from + ")"
+	}
+	program := path
+	if from == "on PATH" {
+		program = "adb"
+	}
+	if out, err := env.Run(ctx, program, "version"); err == nil {
 		if line := firstLine(out); line != "" {
 			c.Detail = line + " (" + path + ")"
 		}
@@ -321,7 +342,7 @@ func adbServer(env Env) Check {
 		c.State = Unknown
 		c.Detail = "something is listening on " + address + ", and the system would not say which account runs it, so the agent will not use it"
 		c.Remedy = android.ServerRemedy
-	case uid == os.Geteuid():
+	case uid == netcap.ThisAccount():
 		c.State = Satisfied
 		c.Detail = "listening on " + address + ", run by you"
 	case uid == 0:
@@ -340,10 +361,10 @@ func appiumBinary(ctx context.Context, env Env) Check {
 		Name: "Appium",
 		Need: "a local Appium is what drives a device for a real run; the agent connects to it with --appium",
 	}
-	path, err := env.LookPath("appium")
-	if err != nil {
+	path, found := appiumOnPath(env)
+	if !found {
 		c.State = Missing
-		c.Detail = "not on PATH"
+		c.Detail = appiumMissingDetail(env.System)
 		c.Remedy = "install Appium 2 (npm i -g appium) — we do not install it for you: it is your machine"
 		return c
 	}
@@ -414,10 +435,10 @@ func appiumDriver(ctx context.Context, env Env, driver string, platform inventor
 	}
 	if !platformIsInPlay(platform, outcomes) {
 		c.State = NotRequired
-		c.Detail = "no " + string(platform) + " device was seen on this machine"
+		c.Detail = notSeen(platform, outcomes)
 		return c
 	}
-	if _, err := env.LookPath("appium"); err != nil {
+	if _, found := appiumOnPath(env); !found {
 		c.State = Unknown
 		c.Detail = "Appium is not on PATH, so its driver list cannot be read"
 		c.Remedy = "install Appium first; this check can then say whether " + driver + " is there"
@@ -455,7 +476,7 @@ func xcodeBuildTools(ctx context.Context, env Env, outcomes []inventory.Outcome)
 	}
 	if !platformIsInPlay(inventory.IOS, outcomes) {
 		c.State = NotRequired
-		c.Detail = "no iOS device was seen on this machine"
+		c.Detail = notSeen(inventory.IOS, outcomes)
 		return c
 	}
 	path, err := env.LookPath("xcodebuild")
@@ -496,7 +517,7 @@ func iosDeveloperMode(ctx context.Context, env Env, outcomes []inventory.Outcome
 	}
 	if !platformIsInPlay(inventory.IOS, outcomes) {
 		c.State = NotRequired
-		c.Detail = "no iOS device was seen on this machine"
+		c.Detail = notSeen(inventory.IOS, outcomes)
 		return c
 	}
 	if env.IosDeveloperMode == nil {
@@ -549,6 +570,25 @@ func iosDeveloperMode(ctx context.Context, env Env, outcomes []inventory.Outcome
 // platformIsInPlay: did this machine actually see a device of that platform? An UNANSWERED platform counts as in
 // play — "I could not ask" must never be read as "there is nothing there", which is the rule the whole inventory
 // vocabulary turns on.
+// notSeen is why a platform's check is not needed here: no device of it was seen, or — iOS on Windows — this system cannot
+// serve it at all ("n/a on Windows: iOS needs a Mac").
+func notSeen(platform inventory.Platform, outcomes []inventory.Outcome) string {
+	for _, o := range outcomes {
+		if o.Platform() == platform && o.NotHereBecause() != "" {
+			return "n/a on Windows: " + platformName(platform) + " " + o.NotHereBecause()
+		}
+	}
+	return "no " + platformName(platform) + " device was seen on this machine"
+}
+
+// platformName is a platform as a person writes it.
+func platformName(p inventory.Platform) string {
+	if p == inventory.IOS {
+		return "iOS"
+	}
+	return "Android"
+}
+
 func platformIsInPlay(platform inventory.Platform, outcomes []inventory.Outcome) bool {
 	for _, o := range outcomes {
 		if o.Platform() != platform {
@@ -597,7 +637,7 @@ func iosProvisioningProfile(ctx context.Context, env Env, outcomes []inventory.O
 	}
 	if !platformIsInPlay(inventory.IOS, outcomes) {
 		c.State = NotRequired
-		c.Detail = "no iOS device was seen on this machine"
+		c.Detail = notSeen(inventory.IOS, outcomes)
 		return c
 	}
 	if env.IosWdaBundleID == "" {
@@ -830,7 +870,7 @@ func iosWdaProjectTargets(ctx context.Context, env Env, outcomes []inventory.Out
 	}
 	if !platformIsInPlay(inventory.IOS, outcomes) {
 		c.State = NotRequired
-		c.Detail = "no iOS device was seen on this machine"
+		c.Detail = notSeen(inventory.IOS, outcomes)
 		return c
 	}
 	if env.WdaProjectPath == "" {
@@ -934,7 +974,7 @@ func iosWdaPort(ctx context.Context, env Env, outcomes []inventory.Outcome) Chec
 	}
 	if !platformIsInPlay(inventory.IOS, outcomes) {
 		c.State = NotRequired
-		c.Detail = "no iOS device was seen on this machine"
+		c.Detail = notSeen(inventory.IOS, outcomes)
 		return c
 	}
 	if env.IosLocalPortStatus == nil {
@@ -1026,7 +1066,7 @@ func iosSigningIdentity(ctx context.Context, env Env, outcomes []inventory.Outco
 	}
 	if !platformIsInPlay(inventory.IOS, outcomes) {
 		c.State = NotRequired
-		c.Detail = "no iOS device was seen on this machine"
+		c.Detail = notSeen(inventory.IOS, outcomes)
 		return c
 	}
 	if env.IosIdentities == nil {

@@ -172,13 +172,26 @@ func TestOnlyThisAccountAndTheAdministratorMayUseTheProxy(t *testing.T) {
 	if !MayUseTheProxy(os.Geteuid()) || !MayUseTheProxy(0) {
 		t.Fatal("this account and the administrator may use the proxy")
 	}
-	if MayUseTheProxy(os.Geteuid()+1) || MayUseTheProxy(-1) {
+	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): on Windows this account is -1 (os.Geteuid's own answer there),
+	// and -1+1 is root, so another account is anotherAccount(); -1 is another account only where this one is not -1.
+	if MayUseTheProxy(anotherAccount()) || (ThisAccount() != -1 && MayUseTheProxy(-1)) {
 		t.Fatal("no other account may")
 	}
 }
 
-// supportedHere says whether this system's kernel is asked (capture runs on macOS and Linux only).
-func supportedHere() bool { return runtime.GOOS == "darwin" || runtime.GOOS == "linux" }
+// anotherAccount is an account number that is neither this one nor root, on every system.
+func anotherAccount() int {
+	if other := ThisAccount() + 1; other != 0 {
+		return other
+	}
+	return 1002
+}
+
+// supportedHere says whether this system's kernel is asked: macOS, Linux, and since AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE
+// Windows, whose CI job now runs these against its own TCP table.
+func supportedHere() bool {
+	return runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows"
+}
 
 // THE REAL KERNEL, ON THE MACHINE THE TESTS RUN ON: a connection this process opens is found, as this account — from both
 // of its ends. This is what proves the measured offsets (macOS) and the table's format (Linux) against the kernel itself.
@@ -217,7 +230,7 @@ func TestThisMachineNamesItsOwnConnection(t *testing.T) {
 func TestACheckThatCannotFindItsOwnConnectionDoesNotWork(t *testing.T) {
 	for name, owner := range map[string]PeerOwner{
 		"the kernel could not be asked": func(net.Conn) (int, bool) { return 0, false },
-		"it names another account":      func(net.Conn) (int, bool) { return os.Geteuid() + 1, true },
+		"it names another account":      func(net.Conn) (int, bool) { return anotherAccount(), true },
 		"it names the administrator":    func(net.Conn) (int, bool) { return 0, os.Geteuid() != 0 },
 	} {
 		if err := peerCheckWorks(owner); !errors.Is(err, ErrPeerCheck) {
@@ -255,7 +268,7 @@ func TestTheProxyRefusesAnotherAccountsConnectionUnread(t *testing.T) {
 		found   bool
 		allowed bool
 	}{
-		{"another account", os.Geteuid() + 1, true, false},
+		{"another account", anotherAccount(), true, false},
 		{"an account that could not be found", 0, false, false},
 		{"this account", os.Geteuid(), true, true},
 		{"the administrator", 0, true, true},

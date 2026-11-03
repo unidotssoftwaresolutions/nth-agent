@@ -43,6 +43,8 @@ type jsonDevice struct {
 	OsVersion    string        `json:"osVersion,omitempty"`
 	FormFactor   string        `json:"formFactor,omitempty"`
 	Platform     string        `json:"platform"`
+	Emulator     bool          `json:"emulator,omitempty"`
+	AVD          string        `json:"avd,omitempty"`
 	LiveView     *jsonLiveView `json:"liveView,omitempty"`
 }
 
@@ -72,7 +74,8 @@ func JSON(w io.Writer, outcomes []inventory.Outcome, liveView LiveViewFor) error
 		case o.IsAnswered():
 			devices := make([]jsonDevice, 0, len(o.Offerable()))
 			for _, d := range o.Offerable() {
-				device := jsonDevice{ID: d.ID, Model: d.Model, Manufacturer: d.Manufacturer, OsVersion: d.OsVersion, FormFactor: d.FormFactor, Platform: string(o.Platform())}
+				device := jsonDevice{ID: d.ID, Model: d.Model, Manufacturer: d.Manufacturer, OsVersion: d.OsVersion, FormFactor: d.FormFactor, Platform: string(o.Platform()),
+					Emulator: d.Emulator, AVD: d.AVD}
 				if liveView != nil {
 					judged := liveView(o.Platform(), d.ID)
 					device.LiveView = &jsonLiveView{Available: judged.Available, Reason: judged.Reason, Remedy: judged.Remedy, Unchecked: judged.Unchecked}
@@ -99,6 +102,9 @@ func JSON(w io.Writer, outcomes []inventory.Outcome, liveView LiveViewFor) error
 			// No devices key AT ALL — the injection this seals is `"devices": []` with no reason.
 			entry.Reason = o.Reason()
 			entry.Remedy = o.Remedy()
+		case o.NotHereBecause() != "":
+			// A platform this system cannot serve: not asked, and why, with nothing to do about it here.
+			entry.Reason = o.NotHereBecause()
 		}
 		payload = append(payload, entry)
 	}
@@ -133,6 +139,8 @@ func Styled(w io.Writer, m ui.Mode, outcomes []inventory.Outcome, liveView LiveV
 	for _, o := range outcomes {
 		platform := PlatformName(o.Platform())
 		switch {
+		case o.NotHereBecause() != "":
+			say(m.Marked(ui.MarkNote, platform+": "+o.NotHereBecause(), m.Dim, width)...)
 		case o.IsNotAsked():
 			say(m.Marked(ui.MarkNote, platform+": not checked on this host (the probe is switched off — this is not a report about your devices).", m.Dim, width)...)
 		case o.IsCouldNotAsk():
@@ -148,11 +156,28 @@ func Styled(w io.Writer, m ui.Mode, outcomes []inventory.Outcome, liveView LiveV
 			}
 			say(m.Marked(mark, fmt.Sprintf("%s: %d usable, %d attached but unusable", platform, len(o.Offerable()), len(o.Unusable())), nil, width)...)
 			for _, d := range o.Offerable() {
-				rows = append(rows, []ui.Cell{{Text: deviceName(d.Model, d.ID)}, {Text: platform}, {Text: orDash(d.OsVersion)}, {Text: "ready to offer", Paint: m.Good}})
-				if liveView != nil {
-					views = append(views, deviceName(d.Model, d.ID))
-					views = append(views, m.Indented("  ", "live view: "+liveView(o.Platform(), d.ID).Line(), m.Dim, width)...)
+				name, kind := deviceName(d.Model, d.ID), platform
+				if d.Emulator {
+					// AN EMULATOR ON THIS MACHINE is offered like a phone on the cable, and said to be one: its virtual
+					// device's name, and "emulator" beside the platform.
+					kind = platform + " emulator"
+					if d.AVD != "" {
+						name = d.AVD
+					}
 				}
+				rows = append(rows, []ui.Cell{{Text: name}, {Text: kind}, {Text: orDash(d.OsVersion)}, {Text: "ready to offer", Paint: m.Good}})
+				if liveView == nil {
+					continue
+				}
+				judged := liveView(o.Platform(), d.ID)
+				if judged.Available || judged.Remedy == "" {
+					views = append(views, name)
+					views = append(views, m.Indented("  ", "live view: "+judged.Line(), m.Dim, width)...)
+					continue
+				}
+				// A LIVE VIEW THAT CANNOT OPEN is a problem like any other: what, why, and what to do on this system.
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: name + ": no live view — " + judged.Reason,
+					Why: "Runs on it are still driven; nobody can watch them live.", Do: judged.Remedy}, width, false)...)
 			}
 			for _, u := range o.Unusable() {
 				rows = append(rows, []ui.Cell{{Text: deviceName("", u.ID)}, {Text: platform}, {Text: "—"}, {Text: "left out: " + u.State, Paint: m.Stop}})
@@ -163,7 +188,7 @@ func Styled(w io.Writer, m ui.Mode, outcomes []inventory.Outcome, liveView LiveV
 			for _, d := range o.LeftOut() {
 				rows = append(rows, []ui.Cell{{Text: deviceName("", d.ID)}, {Text: platform}, {Text: "—"}, {Text: "left out: not on a USB cable", Paint: m.Look}})
 				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s phone %s is %s", platform, d.ID, d.How),
-					Why: "The agent offers only phones on a USB cable, so this one is left out.",
+					Why: "The agent offers phones on a USB cable and the emulators on this machine, so this one is left out.",
 					Do:  "connect it by USB cable, or offer it too: start connect with " + inventory.OfferUncabledFlag}, width, false)...)
 			}
 			// The platform ANSWERED and still has something it could not establish. Worded as a note, never as a failure: a

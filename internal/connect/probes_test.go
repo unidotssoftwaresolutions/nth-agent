@@ -82,7 +82,8 @@ func TestASustainedFailureOffersTheSkipSwitchExactlyOnce(t *testing.T) {
 	if got := strings.Count(out.String(), hint); got != 1 {
 		t.Fatalf("the switch is offered EXACTLY once, got %d in %q", got, out.String())
 	}
-	if !strings.Contains(out.String(), "will never drive ios devices") {
+	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the platform is written iOS; the flag's value stays `ios`.
+	if !strings.Contains(out.String(), "will never drive iOS devices") {
 		t.Fatalf("the offer explains when to use it, got %q", out.String())
 	}
 }

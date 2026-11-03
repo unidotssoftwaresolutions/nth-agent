@@ -69,10 +69,11 @@ appears on the run's Network tab. It is off until you turn it on here, set up ea
   - What reaches us is the masked record, kept with the run for one hour. Nothing raw is ever kept on this machine: the
     masked copy waits here only until your workspace pulls it, and is deleted then, or an hour after the capture stops.
   - To read HTTPS, this agent makes one certificate authority of its own, here, valid for one year. The agent never sends
-    its private key anywhere, and keeps the capture folder out of backups: out of Time Machine on a Mac, and marked for
-    backup tools that honour CACHEDIR.TAG on Linux. A backup made before that, or by a tool that ignores it, may still
-    hold a copy of the key and of capture files; removing the certificate from every phone is what ends a copied key's
-    use. You install its certificate on each test phone yourself (` + command.Line("capture setup") + `).
+    its private key anywhere, and keeps the capture folder out of backups: out of Time Machine on a Mac, marked for
+    backup tools that honour CACHEDIR.TAG on Linux, and on Windows in Local AppData, which does not roam with your
+    profile and which File History leaves out unless you add it. A backup made before that, or by a tool that ignores
+    it, may still hold a copy of the key and of capture files; removing the certificate from every phone is what ends a
+    copied key's use. You install its certificate on each test phone yourself (` + command.Line("capture setup") + `).
   - To turn it all off: ` + command.Line("capture disable") + `. It hands every phone back, deletes the key and every capture file
     on this machine, and says how to remove the certificate from each phone (on a Samsung, in both places it is listed).
 
@@ -109,7 +110,7 @@ Set up a phone with: %s
 
 // UnsupportedSystem is what `capture enable` says on a system this agent cannot keep a key to one user on.
 func UnsupportedSystem(goos string) string {
-	return fmt.Sprintf("Network capture runs on macOS and Linux only, and this machine is %s: this agent cannot keep the "+
+	return fmt.Sprintf("Network capture runs on macOS, Linux and Windows only, and this machine is %s: this agent cannot keep the "+
 		"capture key to you alone here, so it does not make one. Nothing was changed.\n\n%s\n", goos, SixThings())
 }
 

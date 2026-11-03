@@ -6,7 +6,7 @@ with every copy of it, so they are here: for each piece of it, where it comes fr
 licence in full. Everything else in nth-agent is its own code, which these licences do not cover.
 
 This list is made from what is linked into each program a release builds
-(darwin/arm64, darwin/amd64 and linux/amd64), not kept by hand. The agent's `notices` command prints it.
+(darwin/arm64, darwin/amd64, linux/amd64, linux/arm64 and windows/amd64), not kept by hand. The agent's `notices` command prints it.
 
 Contents
 

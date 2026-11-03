@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -106,6 +107,9 @@ func TestEveryRestartLineRunsThisReleaseHoweverTheAgentWasStarted(t *testing.T) 
 	}
 	for _, way := range everyWayToStart {
 		t.Run(way.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && way.want == command.StartedFromProject {
+				t.Skip("the fixture's project paths are Unix paths (/home/ada/...); Windows paths are not this test's subject")
+			}
 			startAs(t, way)
 			for _, line := range lines {
 				if strings.Count(line.before, bare) != 1 {

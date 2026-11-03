@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,9 @@ import (
 // ── TURNING CAPTURE ON: the CA first, then the mark, and nothing on a system that cannot keep the key ─────────────
 
 func TestEnableMakesTheCAThenTheMarkAndNeverReplacesACA(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this asserts Unix file modes; on Windows the same rule is an access list for this account alone, held by internal/private's Windows test")
+	}
 	store := StoreIn(t.TempDir())
 	now := time.Now()
 	ca, err := Enable(store, "bench-mac", "v-test", now, "linux")

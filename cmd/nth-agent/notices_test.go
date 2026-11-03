@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -66,6 +67,7 @@ func expand(t *testing.T, script string, values map[string]string) string {
 
 func needTools(t *testing.T, tools ...string) {
 	t.Helper()
+	skipWorkflowStepsOnWindows(t)
 	for _, tool := range tools {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Fatalf("this seal runs a workflow step, which needs %s — as the runner has. It fails rather than skips: a seal "+
@@ -74,9 +76,21 @@ func needTools(t *testing.T, tools ...string) {
 	}
 }
 
+// skipWorkflowStepsOnWindows: a seal that runs a workflow's own step runs it with bash and the GNU tools of the ubuntu
+// runner the step runs on — tar, cmp, find, awk, sed, shasum, and #!/bin/sh stand-ins for gh, git and the agent. Windows
+// has none of them as the step expects (its own find.exe and tar.exe answer to those names), so on Windows the seal says
+// so and skips; the ubuntu job runs every one of them (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE).
+func skipWorkflowStepsOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("this seal runs a workflow step with bash and the ubuntu runner's tools; the ubuntu CI job runs it")
+	}
+}
+
 // runStep runs a step's script with bash in dir; extra environment entries come last and win.
 func runStep(t *testing.T, script, dir string, env ...string) (string, error) {
 	t.Helper()
+	skipWorkflowStepsOnWindows(t)
 	cmd := exec.Command("bash", "-c", script)
 	cmd.Dir = dir
 	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME")}, env...)
@@ -328,7 +342,11 @@ func TestEveryArchiveCarriesTheNotices(t *testing.T) {
 		goos, goarch := target[0], target[1]
 		step := expand(t, workflowStep(t, "release.yml", "Archive"), map[string]string{"matrix.goos": goos, "matrix.goarch": goarch})
 		work := t.TempDir()
-		writeFile(t, filepath.Join(work, "dist", "nth-agent"), []byte("binary\n"), 0o755)
+		program := "nth-agent"
+		if goos == "windows" {
+			program += ".exe" // AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the Build step names it so
+		}
+		writeFile(t, filepath.Join(work, "dist", program), []byte("binary\n"), 0o755)
 		for name, data := range tree {
 			writeFile(t, filepath.Join(work, name), data, 0o644)
 		}
@@ -341,6 +359,9 @@ func TestEveryArchiveCarriesTheNotices(t *testing.T) {
 			t.Fatalf("listing the %s/%s archive the step made: %v", goos, goarch, err)
 		}
 		for _, member := range archiveMembers {
+			if member == "nth-agent" {
+				member = program
+			}
 			if !strings.Contains("\n"+string(listing), "\n"+member+"\n") {
 				t.Fatalf("the %s/%s archive holds:\n%sand not %s — a download that arrives without it arrives without what it owes",
 					goos, goarch, listing, member)

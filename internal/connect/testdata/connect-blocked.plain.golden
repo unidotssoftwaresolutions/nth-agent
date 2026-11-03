@@ -8,5 +8,5 @@ Stop      Ctrl-C — hands the phones back and tells the farm this machine is le
   Your phones stay visible on the Devices screen either way — they are reported as present, just not offered.
   → run `npx nthcase-agent@latest doctor` to see what this machine is missing, then restart with --appium URL
 ✓ registered as node 11111111-2222-3333-4444-555555555555
-✓ android: 2 usable, 0 attached but unusable
-· ios: 0 usable, 0 attached but unusable
+✓ Android: 2 usable, 0 attached but unusable
+· iOS: 0 usable, 0 attached but unusable

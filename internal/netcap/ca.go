@@ -27,6 +27,7 @@ import (
 	"unicode"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/command"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/private"
 )
 
 // ── THE AGENT'S OWN CERTIFICATE AUTHORITY, AND THE ONE FILE ALLOWED TO MINT ─────────────────────────────────────
@@ -382,7 +383,7 @@ func writeOwnerOnly(path string, data []byte) error {
 	_, werr := file.Write(data)
 	serr := file.Sync()
 	cerr := file.Close()
-	if err := errors.Join(werr, serr, cerr); err != nil {
+	if err := errors.Join(werr, serr, cerr, private.File(path)); err != nil {
 		_ = os.Remove(path)
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
@@ -391,10 +392,7 @@ func writeOwnerOnly(path string, data []byte) error {
 
 // ownerOnlyFolder makes dir (and its parents) and leaves dir itself at 0700, whatever the umask or an earlier mode said.
 func ownerOnlyFolder(dir string) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating %s: %w", dir, err)
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := private.Folder(dir); err != nil {
 		return fmt.Errorf("making %s readable by this user only: %w", dir, err)
 	}
 	return ownerOnly(dir, true)
@@ -412,8 +410,8 @@ func ownerOnly(path string, folder bool) error {
 		return fmt.Errorf("%s is not a folder", path)
 	case !folder && !info.Mode().IsRegular():
 		return fmt.Errorf("%s is not a regular file", path)
-	case info.Mode().Perm()&0o077 != 0:
-		return fmt.Errorf("%s can be read by other users of this machine (mode %04o) — this agent keeps its capture CA to this user only; turn capture off and on again (%s, then enable)", path, info.Mode().Perm(), command.Line("capture disable"))
+	case private.Problem(path, info) != "":
+		return fmt.Errorf("%s can be read by other users of this machine (%s) — this agent keeps its capture CA to this user only; turn capture off and on again (%s, then enable)", path, private.Problem(path, info), command.Line("capture disable"))
 	}
 	return nil
 }

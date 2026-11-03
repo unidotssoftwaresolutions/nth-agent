@@ -35,7 +35,7 @@ func TestEveryGateRefusesWithoutTouchingThePhone(t *testing.T) {
 			arrange: func(_ *testing.T, _ *machine, cfg *Config) { cfg.GOOS = "plan9" }},
 		{name: "a CA key other users can read", serial: serial, want: refusedCA(),
 			arrange: func(t *testing.T, m *machine, _ *Config) {
-				must(t, os.Chmod(netcap.KeyPathIn(m.store.CADir()), 0o644))
+				exposeToOthers(t, netcap.KeyPathIn(m.store.CADir()), 0o644)
 			}},
 		{name: "a CA past its year", serial: serial, want: refusedCA(),
 			arrange: func(_ *testing.T, m *machine, _ *Config) { m.clock.Advance(367 * 24 * time.Hour) }},
@@ -580,7 +580,7 @@ func TestTheDeclarationIsTheMachinesAndNeverReadsTheKey(t *testing.T) {
 			cfg.LookPath = func(string) (string, error) { return "", os.ErrNotExist }
 		}, farm.CaptureUnavailable},
 		{"on, and a key others can read", func(t *testing.T, m *machine, _ *Config) {
-			must(t, os.Chmod(netcap.KeyPathIn(m.store.CADir()), 0o640))
+			exposeToOthers(t, netcap.KeyPathIn(m.store.CADir()), 0o640)
 		}, farm.CaptureUnavailable},
 		{"on, and a CA past its year", func(_ *testing.T, m *machine, _ *Config) { m.clock.Advance(367 * 24 * time.Hour) }, farm.CaptureUnavailable},
 		{"on, on a system capture does not run on", func(_ *testing.T, _ *machine, cfg *Config) { cfg.GOOS = "plan9" }, farm.CaptureUnavailable},

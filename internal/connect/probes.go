@@ -3,6 +3,7 @@ package connect
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -45,6 +46,12 @@ func ParseSkip(values []string) (map[inventory.Platform]bool, error) {
 // offerUncabled is the customer's answer to inventory.OfferUncabledFlag: false offers only phones on this machine's USB
 // cable and names the others as left out; true offers emulators and phones reached over the network too.
 func ProbeSet(skip map[inventory.Platform]bool, run android.Runner, list ios.Lister, perProbeBudget time.Duration, offerUncabled bool) func(ctx context.Context) []inventory.Outcome {
+	return ProbeSetFor(runtime.GOOS, skip, run, list, perProbeBudget, offerUncabled)
+}
+
+// ProbeSetFor is ProbeSet on the system named: on Windows the iOS probe is never run (ios.NeedsAMac). A TEST SEAM for the
+// system; production passes runtime.GOOS.
+func ProbeSetFor(system string, skip map[inventory.Platform]bool, run android.Runner, list ios.Lister, perProbeBudget time.Duration, offerUncabled bool) func(ctx context.Context) []inventory.Outcome {
 	withBudget := func(ctx context.Context, probe func(context.Context) inventory.Outcome) inventory.Outcome {
 		budgeted, cancel := context.WithTimeout(ctx, perProbeBudget)
 		defer cancel()
@@ -60,7 +67,7 @@ func ProbeSet(skip map[inventory.Platform]bool, run android.Runner, list ios.Lis
 				return android.Probe{Run: run, Enabled: !skip[inventory.Android], Confirmations: confirmations, OfferUncabled: offerUncabled}.Outcome(c)
 			}),
 			withBudget(ctx, func(c context.Context) inventory.Outcome {
-				return ios.Probe{List: list, Enabled: !skip[inventory.IOS], OfferUncabled: offerUncabled}.Outcome(c)
+				return ios.Probe{List: list, Enabled: !skip[inventory.IOS], OfferUncabled: offerUncabled, System: system}.Outcome(c)
 			}),
 		}
 	}

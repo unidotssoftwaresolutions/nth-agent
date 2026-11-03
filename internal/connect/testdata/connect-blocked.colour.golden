@@ -10,6 +10,6 @@
   \x1b[1m→\x1b[0m run `npx nthcase-agent@latest doctor` to see what this machine is missing, then restart with
     --appium URL
 \r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[K\x1b[32m✓\x1b[0m registered as node 11111111-2222-3333-4444-555555555555
-\r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[32m✓\x1b[0m android: 2 usable, 0 attached but unusable
-\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[2m·\x1b[0m ios: 0 usable, 0 attached but unusable
+\r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[32m✓\x1b[0m Android: 2 usable, 0 attached but unusable
+\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[2m·\x1b[0m iOS: 0 usable, 0 attached but unusable
 \r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · the farm took a heartbeat at 12:00:10\x1b[0m\r\x1b[K

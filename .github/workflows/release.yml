@@ -63,16 +63,20 @@ jobs:
     strategy:
       matrix:
         include:
-          # ⚠️ THE SAME THREE TARGETS AS ci.yml, DELIBERATELY. The matrix is a claim this repository makes — the
+          # ⚠️ THE SAME FIVE TARGETS AS ci.yml, DELIBERATELY. The matrix is a claim this repository makes — the
           # platform-claims seal in internal/inventory reads the `goos:` values out of the workflows and refuses
           # any user-visible string naming a platform they do not build, AND now refuses a platform built with no
           # sentence naming it. Widening this set is adding a claim, not adding a build: do it with the sentence,
-          # or not at all. Windows stays absent for the reason ci.yml already gives.
+          # or not at all. Windows (amd64) and Linux on arm64 joined with theirs on 2026-11-03.
           - goos: darwin
             goarch: arm64
           - goos: darwin
             goarch: amd64
           - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
             goarch: amd64
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -115,7 +119,10 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           test -n "$VERSION"
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o dist/nth-agent ./cmd/nth-agent
+          # Windows runs a program only by its extension: the Windows binary is nth-agent.exe, in every archive and package.
+          EXE=""
+          if [ "$GOOS" = windows ]; then EXE=".exe"; fi
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "dist/nth-agent${EXE}" ./cmd/nth-agent
 
       # ⚠️ THE NOTICES NAME EVERY MODULE THIS BINARY LINKS — asked of the binary itself, not of go.mod or of a list. A
       # test builds THIRD_PARTY_NOTICES.txt from `go list` and fails when it drifts, but CI does not run on a tag, so the
@@ -128,7 +135,9 @@ jobs:
           set -euo pipefail
           test -f THIRD_PARTY_NOTICES.txt || { echo "refusing: THIRD_PARTY_NOTICES.txt is not in the tag's tree." >&2; exit 1; }
           INFO="${RUNNER_TEMP}/buildinfo-${{ matrix.goos }}-${{ matrix.goarch }}.txt"
-          go version -m dist/nth-agent > "$INFO"
+          EXE=""
+          if [ "${{ matrix.goos }}" = windows ]; then EXE=".exe"; fi
+          go version -m "dist/nth-agent${EXE}" > "$INFO"
           cat "$INFO"
           deps=0
           missing=0
@@ -167,8 +176,10 @@ jobs:
         run: |
           set -euo pipefail
           NAME="nth-agent_${GITHUB_REF_NAME}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          EXE=""
+          if [ "${{ matrix.goos }}" = windows ]; then EXE=".exe"; fi
           cp README.md THIRD_PARTY_NOTICES.txt LICENSE NOTICE dist/
-          tar -C dist -czf "${NAME}.tar.gz" nth-agent README.md THIRD_PARTY_NOTICES.txt LICENSE NOTICE
+          tar -C dist -czf "${NAME}.tar.gz" "nth-agent${EXE}" README.md THIRD_PARTY_NOTICES.txt LICENSE NOTICE
           shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
 
       # ⚠️ THESE ARTIFACTS ARE WHAT NPM GETS CHECKED AGAINST. publish-npm.yml refuses a release whose archives are not,

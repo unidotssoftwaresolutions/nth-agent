@@ -58,7 +58,7 @@ func realAdb(ctx context.Context, owner localconn.Owner, args ...string) (string
 
 func execAdb(ctx context.Context, args ...string) (string, string, int, error) {
 	var stdout, stderr bytes.Buffer
-	command := exec.CommandContext(ctx, "adb", args...)
+	command := exec.CommandContext(ctx, android.Program(), args...)
 	command.Stdout, command.Stderr = &stdout, &stderr
 	err := command.Run()
 	var exitErr *exec.ExitError

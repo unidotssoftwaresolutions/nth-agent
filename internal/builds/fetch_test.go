@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,6 +114,9 @@ var fileName = regexp.MustCompile(`^[0-9a-f]{32}\.(ipa|apk)$`)
 // extension, readable by this account only, byte for byte what the farm sent — and fetched without the agent's token, from
 // the address the farm gave, once.
 func TestALegitimateBuildBecomesTheAgentsOwnFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this asserts Unix file modes; on Windows the same rule is an access list for this account alone, held by internal/private's Windows test")
+	}
 	for _, address := range []string{ipaAt, apkAt} {
 		build := rawZip{entries: anApp()}.bytes()
 		farm := &stubFarm{answer: serving(build, http.Header{"Content-Type": {"application/octet-stream"}}, int64(len(build)))}
@@ -345,6 +349,9 @@ func TestAnAnswerThatIsNotTheBuildIsRefused(t *testing.T) {
 
 // The sweep at the agent's start removes every file of its own a crash left behind, and nothing else.
 func TestTheSweepAtStartRemovesWhatACrashLeft(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this asserts Unix file modes; on Windows the same rule is an access list for this account alone, held by internal/private's Windows test")
+	}
 	config := t.TempDir()
 	dir := filepath.Join(config, "nth-agent", "builds")
 	if err := os.MkdirAll(dir, 0o700); err != nil {

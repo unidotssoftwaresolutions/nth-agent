@@ -41,9 +41,20 @@ type Probe struct {
 	// OfferUncabled offers phones usbmuxd reaches over the network too — inventory.OfferUncabledFlag. False, the default,
 	// offers only phones on a USB cable and names the others as left out.
 	OfferUncabled bool
+	// System is the system this agent runs on (runtime.GOOS). On Windows the probe never runs: see NeedsAMac.
+	System string
 }
 
+// NeedsAMac is why iOS is not asked on Windows, in the words every screen says it in: "iOS: needs a Mac". Driving an
+// iPhone takes WebDriverAgent, which only Xcode builds and signs, and Appium's xcuitest driver runs only on macOS; a
+// Windows machine has neither, and Apple's device service there is not one this agent talks to. On Linux the probe still
+// lists iPhones over usbmuxd, as before; this agent does not claim it can drive them there.
+const NeedsAMac = "needs a Mac"
+
 func (p Probe) Outcome(ctx context.Context) inventory.Outcome {
+	if p.System == "windows" {
+		return inventory.NotHere(inventory.IOS, NeedsAMac)
+	}
 	if !p.Enabled {
 		return inventory.NotAsked(inventory.IOS)
 	}

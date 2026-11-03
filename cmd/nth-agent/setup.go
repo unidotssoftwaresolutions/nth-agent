@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/connect"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/ios"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/state"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/wda"
 )
 
@@ -29,7 +32,17 @@ const buildTimeout = 10 * time.Minute
 // question. A tool that asks "is this ok?" and then discovers it does not know which phone has asked nothing.
 // THE PROCESS SEAM IS A PARAMETER, not a package var: a seal about "does this ask before it builds" is worthless
 // if the only way to run it is to actually build.
+// setupSystem is the system setup-ios runs on (runtime.GOOS) — A TEST SEAM.
+var setupSystem = runtime.GOOS
+
 func runSetupIos(inv *invocation, stdin io.Reader, stdout, stderr io.Writer, build wda.Runner) int {
+	// iPhones need a Mac (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): said plainly, before anything is looked for.
+	if setupSystem == "windows" {
+		refuse(stderr, false, ui.Problem{What: "setup-ios builds WebDriverAgent with Xcode, and this machine runs Windows",
+			Why: "iPhones need a Mac: only Xcode builds and signs WebDriverAgent, and it runs only on macOS.",
+			Do:  "run setup-ios on a Mac — this machine serves Android phones and emulators: " + command.Line("doctor")})
+		return 1
+	}
 	teamID := firstNonEmpty(inv.first("--ios-team-id"), os.Getenv("NTH_AGENT_IOS_TEAM_ID"))
 	bundleID := firstNonEmpty(inv.first("--ios-wda-bundle-id"), os.Getenv("NTH_AGENT_IOS_WDA_BUNDLE_ID"))
 	signingID := firstNonEmpty(inv.first("--ios-signing-id"), os.Getenv("NTH_AGENT_IOS_SIGNING_ID"), "Apple Development")
@@ -66,7 +79,7 @@ func runSetupIos(inv *invocation, stdin io.Reader, stdout, stderr io.Writer, bui
 
 	derived := inv.first("--derived-data-path")
 	if derived == "" {
-		configDir, err := os.UserConfigDir()
+		configDir, err := state.ConfigDir()
 		if err != nil {
 			fmt.Fprintf(stderr, "cannot locate the user config directory: %v\n", err)
 			return 1

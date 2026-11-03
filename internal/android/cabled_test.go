@@ -41,23 +41,24 @@ func ids(offerable []inventory.Offerable) []string {
 	return out
 }
 
+// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the emulator running on this machine is offered now — the person's
+// own virtual device, not a phone that left the desk. The two network phones are still left out, and asked nothing.
 func TestOnlyAPhoneOnTheCableIsOfferedByDefault(t *testing.T) {
 	var asked []string
 	outcome := android.Probe{Run: listingRunner(fourTransports, &asked), Enabled: true}.Outcome(context.Background())
 
-	if got := ids(outcome.Offerable()); !reflect.DeepEqual(got, []string{"DUMMYUSB01"}) {
-		t.Fatalf("only the phone on the cable is offered, got %v", got)
+	if got := ids(outcome.Offerable()); !reflect.DeepEqual(got, []string{"DUMMYUSB01", "emulator-5554"}) {
+		t.Fatalf("the phone on the cable and the emulator on this machine are offered, got %v", got)
 	}
 	want := []inventory.LeftOut{
 		{ID: "192.0.2.10:5555", How: "reached over the network (adb connect)"},
 		{ID: "adb-DUMMY0001-AbCdEf._adb-tls-connect._tcp", How: "reached over Wi-Fi (wireless debugging)"},
-		{ID: "emulator-5554", How: "an emulator"},
 	}
 	if got := outcome.LeftOut(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("the others are named as left out, each with how it is reached:\n got %+v\nwant %+v", got, want)
 	}
 	for _, serial := range asked {
-		if serial != "DUMMYUSB01" {
+		if serial != "DUMMYUSB01" && serial != "emulator-5554" {
 			t.Fatalf("a phone that is left out is not asked anything either, but %s was", serial)
 		}
 	}

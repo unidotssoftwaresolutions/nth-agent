@@ -48,9 +48,12 @@ func goldenDevices() []inventory.Outcome {
 			[]inventory.Offerable{
 				{ID: "R5CT30ABCDE", Model: "SM-A546B", OsVersion: "14"},
 				{ID: "39051FDJH00ABC", Model: "Pixel 8", OsVersion: "15"},
+				// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): an emulator on this machine is offered, by its AVD name,
+				// and the phone left out is one adb reaches over the network.
+				{ID: "emulator-5554", Model: "sdk_gphone64_arm64", OsVersion: "15", Emulator: true, AVD: "Pixel_8_API_35"},
 			},
 			[]inventory.Unusable{inventory.NewUnusable("R5CT32ABCDE", "unauthorized", "Tap Allow on the phone's USB debugging prompt, then re-run.")}),
-			[]inventory.LeftOut{{ID: "emulator-5554", How: "an emulator"}}),
+			[]inventory.LeftOut{{ID: "192.0.2.10:5555", How: "reached over the network (adb connect)"}}),
 		inventory.CouldNotAsk(inventory.IOS, "usbmuxd did not answer within 20s", "unplug the iPhone and plug it back in, then re-run"),
 	}
 }
@@ -58,6 +61,9 @@ func goldenDevices() []inventory.Outcome {
 func goldenLiveView(_ inventory.Platform, id string) liveview.Availability {
 	if id == "R5CT30ABCDE" {
 		return liveview.Availability{Available: true, Port: 35118, Reason: "its mirror is 127.0.0.1:35118, reserved on this machine for this phone"}
+	}
+	if id == "emulator-5554" {
+		return liveview.Availability{Available: true, Port: 35120, Reason: "its mirror is 127.0.0.1:35120, reserved on this machine for this phone"}
 	}
 	return liveview.Availability{Reason: "no mirror port was free on this machine", Remedy: "free 31002 (lsof -nP -iTCP:31002 -sTCP:LISTEN names what holds it), then restart the agent"}
 }

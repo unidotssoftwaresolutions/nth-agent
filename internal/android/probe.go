@@ -22,8 +22,9 @@ type Probe struct {
 	// not be re-measured every ten seconds. Nil is valid and means "read every time" (the single-shot `devices`
 	// verb). See InstallConfirmations for why caching this one is correct and what it refuses to remember.
 	Confirmations *InstallConfirmations
-	// OfferUncabled offers emulators and phones adb reaches over Wi-Fi or the network too — inventory.OfferUncabledFlag.
-	// False, the default, offers only phones on a USB cable and names the others as left out.
+	// OfferUncabled offers phones adb reaches over Wi-Fi or the network too — inventory.OfferUncabledFlag. False, the
+	// default, offers only phones on a USB cable, and the emulators running on this machine (LocalEmulator), and names the
+	// others as left out.
 	OfferUncabled bool
 }
 
@@ -86,7 +87,29 @@ func (p Probe) describe(ctx context.Context, d inventory.Offerable) inventory.Of
 	d.Manufacturer = p.getprop(ctx, d.ID, "ro.product.manufacturer")
 	d.OsVersion = p.getprop(ctx, d.ID, "ro.build.version.release")
 	d.FormFactor = FormFactorFrom(p.getprop(ctx, d.ID, "ro.build.characteristics"))
+	if d.Emulator {
+		d.AVD = p.avdName(ctx, d.ID)
+	}
 	return d
+}
+
+// avdName is an emulator's virtual device name, as the emulator says it: its boot property, or, from an older emulator
+// that sets none, its console's answer through adb (`adb -s <serial> emu avd name`, whose last line is "OK"). "" when
+// neither answered.
+func (p Probe) avdName(ctx context.Context, serial string) string {
+	if name := p.getprop(ctx, serial, "ro.boot.qemu.avd_name"); name != "" {
+		return name
+	}
+	out, err := p.Run(ctx, "-s", serial, "emu", "avd", "name")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" && line != "OK" {
+			return line
+		}
+	}
+	return ""
 }
 
 func (p Probe) getprop(ctx context.Context, serial, prop string) string {
@@ -137,6 +160,10 @@ func FormFactorFrom(characteristics string) string {
 // cabled transport — `usb:2-1.1` on Linux, `usb:338690048X` on macOS — and none for a phone joined with `adb connect`, one
 // reached by Wireless debugging, or an emulator. A "device" line without one is left out (see Probe.OfferUncabled), and
 // named with how it is reached; Parse drops it, parse keeps it.
+//
+// AN EMULATOR ON THIS MACHINE IS OFFERED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE). It is the person's own virtual
+// device, running on the desk the agent runs on — not a phone that left the desk — so the cable rule, which is about
+// phones, does not apply to it. See LocalEmulator for how "on this machine" is known.
 func Parse(out string) ([]inventory.Offerable, []inventory.Unusable) {
 	offerable, unusable, _ := parse(out)
 	return offerable, unusable
@@ -174,6 +201,10 @@ func parse(out string) ([]inventory.Offerable, []inventory.Unusable, []inventory
 			// string for the model than ro.product.model, which is what the rack publishes and a lease is written
 			// in. It is not the model; describe() reads the real one, and an unanswered read stays empty.
 			if valueOf(fields, "usb") == "" {
+				if LocalEmulator(serial) {
+					offerable = append(offerable, inventory.Offerable{ID: serial, Emulator: true})
+					continue
+				}
 				uncabled = append(uncabled, inventory.LeftOut{ID: serial, How: howReached(serial)})
 				continue
 			}
@@ -183,6 +214,29 @@ func parse(out string) ([]inventory.Offerable, []inventory.Unusable, []inventory
 		unusable = append(unusable, inventory.NewUnusable(serial, state, remedyFor(state)))
 	}
 	return offerable, unusable, uncabled
+}
+
+// LocalEmulator says whether serial is an emulator running on this machine: `emulator-<console port>`, the console port
+// even and in adb's own range (5554 to 5682, 64 emulators).
+//
+// WHY THE NAME IS ENOUGH. adb gives a transport that name only for an emulator it found on ITS OWN machine's loopback —
+// it looks for one on 127.0.0.1 at each console port's neighbour, and a starting emulator announces itself to the local
+// server — whose console is therefore 127.0.0.1:<port> on that machine. And the server this agent asks is always this
+// machine's own, on loopback, run by this account (adbserver.go: one anywhere else is not used). An emulator on another
+// machine, reached with `adb connect`, is named by its host and port, and is left out like any network phone.
+func LocalEmulator(serial string) bool {
+	port, ok := strings.CutPrefix(serial, "emulator-")
+	if !ok || port == "" || len(port) > 5 {
+		return false
+	}
+	n := 0
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return false
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n >= 5554 && n <= 5682 && n%2 == 0
 }
 
 // howReached says, from the serial adb gives it, how a transport with no usb: key is reached: adb names an emulator

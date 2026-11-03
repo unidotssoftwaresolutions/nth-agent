@@ -53,6 +53,13 @@ var PerTickReads = []PerTickRead{
 		Changes: "nothing short of a different device on the same serial",
 		Cost:    "~64ms",
 	},
+	// AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE: an emulator's virtual device name, for the devices table.
+	{
+		Value:   "getprop ro.boot.qemu.avd_name",
+		Cached:  false,
+		Changes: "nothing short of another emulator on the same console port, which means this one stopped and left the attached set",
+		Cost:    "~64ms for each emulator, and nothing for a phone, which is never asked; an emulator too old to set it is asked once more, through its console (adb emu avd name)",
+	},
 }
 
 // WHY THE FOUR PROPERTY READS ARE STILL PAID EVERY TICK, stated rather than left as an oversight.

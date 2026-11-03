@@ -246,7 +246,7 @@ func benchPortFree(port uint16) bool {
 	config := net.ListenConfig{Control: func(_, _ string, raw syscall.RawConn) error {
 		var setErr error
 		err := raw.Control(func(fd uintptr) {
-			setErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 0)
+			setErr = noReuseAddr(fd)
 		})
 		return errors.Join(err, setErr)
 	}}

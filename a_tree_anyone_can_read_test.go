@@ -87,7 +87,8 @@ func publishedTree(t *testing.T) []treeFile {
 			t.Logf("left out, holds a NUL byte: %s", path)
 			return nil
 		}
-		files = append(files, treeFile{path, string(b)})
+		// Written with / on every system, so the rules below read one spelling of a path (Windows walks with a backslash).
+		files = append(files, treeFile{filepath.ToSlash(path), string(b)})
 		return nil
 	})
 	if err != nil {

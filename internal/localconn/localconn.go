@@ -8,8 +8,9 @@
 // refuses connections from other accounts (internal/netcap/peer.go); this is the same rule for the connections the agent
 // opens itself, asked of the same kernel.
 //
-// WHERE THE OWNER CANNOT BE FOUND — a system other than macOS or Linux, or a kernel that would not say — the connection is
-// refused, with a sentence that says so. Not knowing whose program it is, is not knowing it is the customer's.
+// HOW THE OWNER IS FOUND: the kernel's socket list on macOS and Linux, and on Windows the TCP table's owning process and
+// that process's account (internal/netcap/peer_tcptable.go). WHERE IT CANNOT BE FOUND — another system, or a kernel or a
+// process that would not say — the connection is refused, with a sentence that says so. Not knowing whose program it is, is not knowing it is the customer's.
 package localconn
 
 import (

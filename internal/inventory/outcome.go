@@ -31,6 +31,11 @@ type Offerable struct {
 	Manufacturer string // Android: ro.product.manufacturer; iOS: "Apple" (definitional for a usbmuxd device)
 	OsVersion    string // Android: ro.build.version.release; iOS: unset (needs a lockdown read — see ios.UsbmuxdLister)
 	FormFactor   string // "phone" / "tablet" when the platform said so; unset when it said something else
+	// Emulator is an Android emulator running on THIS machine (android.LocalEmulator), and AVD its virtual device's name
+	// when the emulator said it (ro.boot.qemu.avd_name) — for the reader's screens only: the farm is told what it is told
+	// of any phone.
+	Emulator bool
+	AVD      string
 }
 
 // Unusable is a device the probe SAW and cannot offer. Attached, present, and not available — which
@@ -177,6 +182,21 @@ const MissingRemedyMarker = "(no remedy provided — this is a bug in the probe)
 // not a faulty one — the NodeCaptureAvailability.Disabled-vs-Unavailable distinction, one layer down.
 func NotAsked(platform Platform) Outcome {
 	return Outcome{platform: platform, kind: kindNotAsked}
+}
+
+// NotHere is a platform THIS SYSTEM cannot serve at all — iOS on Windows — so it is never asked, and reason says so in a
+// few words ("needs a Mac"). It is a NotAsked, and every reader that tells NotAsked from an answer still does; Reason is
+// the one thing it adds. A note, never an error: nothing is wrong with a Windows machine that serves Android.
+func NotHere(platform Platform, reason string) Outcome {
+	return Outcome{platform: platform, kind: kindNotAsked, reason: strings.TrimSpace(reason)}
+}
+
+// NotHereBecause is a NotHere's reason, or "" for every other outcome.
+func (o Outcome) NotHereBecause() string {
+	if o.kind != kindNotAsked {
+		return ""
+	}
+	return o.reason
 }
 
 func (o Outcome) Platform() Platform     { return o.platform }

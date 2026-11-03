@@ -121,7 +121,9 @@ func TestDevicesAndDoctorSayTheSameSentenceAboutTheSamePhone(t *testing.T) {
 	if err := render.Human(&listing, outcomes, judge); err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Count(listing.String(), "live view:")
+	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): a live view that cannot open is said as a problem now —
+	// "<phone>: no live view — <why>", then why it matters and what to do — and one that can is still a "live view:" line.
+	lines := strings.Count(listing.String(), "live view:") + strings.Count(listing.String(), ": no live view — ")
 	if lines != 2 {
 		t.Fatalf("`devices` prints one live-view line per usable phone and none for the unusable one:\n%s", listing.String())
 	}
@@ -133,7 +135,7 @@ func TestDevicesAndDoctorSayTheSameSentenceAboutTheSamePhone(t *testing.T) {
 			t.Fatalf("%s: `doctor` says %q and `devices` does not say the same:\n%s", name, c.Detail, listing.String())
 		}
 	}
-	if !strings.Contains(listing.String(), "live view: no — no mirror port was free on this machine") ||
+	if !strings.Contains(listing.String(), ": no live view — no mirror port was free on this machine") ||
 		!strings.Contains(listing.String(), "live view: yes — its mirror is 127.0.0.1:35118") {
 		t.Fatalf("each line says yes or no first:\n%s", listing.String())
 	}

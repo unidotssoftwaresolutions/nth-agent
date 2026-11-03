@@ -25,8 +25,9 @@ import (
 // jobGrants is the most each job may ask for. A job missing from this list, or a grant above its row, fails the seal.
 var jobGrants = map[string]map[string]map[string]string{
 	"ci.yml": {
-		"build-and-test": {"contents": "read"},
-		"cross-compile":  {"contents": "read"},
+		"build-and-test":     {"contents": "read"},
+		"windows-unit-tests": {"contents": "read"},
+		"cross-compile":      {"contents": "read"},
 	},
 	"release.yml": {
 		"build":          {"contents": "read"},

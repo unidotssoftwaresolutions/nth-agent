@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,9 @@ import (
 // to an adb server this account runs. A stub adb on PATH and a listener this test holds stand in for both: no real adb
 // runs and no real adb server is contacted.
 func TestCaptureNeverSendsAPhoneCommandThroughAnotherAccountsAdbServer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake adb here is a #!/bin/sh script, which Windows cannot run; the ubuntu and macOS runs hold this, and the adb search on Windows is held by an_agent_that_drives_android_on_any_machine_test.go")
+	}
 	dir := t.TempDir()
 	mark := filepath.Join(dir, "ran")
 	if err := os.WriteFile(filepath.Join(dir, "adb"), []byte("#!/bin/sh\ntouch '"+mark+"'\n"), 0o755); err != nil {

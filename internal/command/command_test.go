@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -31,6 +32,9 @@ func TestTheOnePlaceSpellsThePackageItShips(t *testing.T) {
 
 // EACH INSTALL, SPELLED: at this machine, and on another screen (never a path of this machine).
 func TestEachInstallIsSpelledTheWayItRuns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture's paths are Unix paths (/home/ada/...); Windows paths are not this test's subject")
+	}
 	cases := []struct {
 		name          string
 		install       Install
@@ -69,6 +73,9 @@ func TestEachInstallIsSpelledTheWayItRuns(t *testing.T) {
 
 // THIS PROCESS: before Use, the npx form with @latest; after it, what Use was given.
 func TestEveryCommandReadsHowThisProcessWasStarted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture's paths are Unix paths (/home/ada/...); Windows paths are not this test's subject")
+	}
 	before := This()
 	t.Cleanup(func() { Use(before) })
 	Use(Install{})

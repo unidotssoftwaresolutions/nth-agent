@@ -1,23 +1,26 @@
-\x1b[32m✓\x1b[0m Android: 2 usable, 1 attached but unusable
+\x1b[32m✓\x1b[0m Android: 3 usable, 1 attached but unusable
 \x1b[31m✗\x1b[0m \x1b[31miOS: could not check\x1b[0m
 
-\x1b[2mNAME\x1b[0m           \x1b[2mPLATFORM\x1b[0m  \x1b[2mOS\x1b[0m  \x1b[2mSTATE\x1b[0m
-SM-A546B       Android   14  \x1b[32mready to offer\x1b[0m
-Pixel 8        Android   15  \x1b[32mready to offer\x1b[0m
-R5CT32ABCDE    Android   —   \x1b[31mleft out: unauthorized\x1b[0m
-emulator-5554  Android   —   \x1b[33mleft out: not on a USB cable\x1b[0m
+\x1b[2mNAME\x1b[0m             \x1b[2mPLATFORM\x1b[0m          \x1b[2mOS\x1b[0m  \x1b[2mSTATE\x1b[0m
+SM-A546B         Android           14  \x1b[32mready to offer\x1b[0m
+Pixel 8          Android           15  \x1b[32mready to offer\x1b[0m
+Pixel_8_API_35   Android emulator  15  \x1b[32mready to offer\x1b[0m
+R5CT32ABCDE      Android           —   \x1b[31mleft out: unauthorized\x1b[0m
+192.0.2.10:5555  Android           —   \x1b[33mleft out: not on a USB cable\x1b[0m
 
 SM-A546B
   \x1b[2mlive view: yes — its mirror is 127.0.0.1:35118, reserved on this machine for this phone\x1b[0m
-Pixel 8
-  \x1b[2mlive view: no — no mirror port was free on this machine (what to do: free 31002 (lsof -nP\x1b[0m
-  \x1b[2m-iTCP:31002 -sTCP:LISTEN names what holds it), then restart the agent)\x1b[0m
+Pixel_8_API_35
+  \x1b[2mlive view: yes — its mirror is 127.0.0.1:35120, reserved on this machine for this phone\x1b[0m
 
+\x1b[33m!\x1b[0m \x1b[33mPixel 8: no live view — no mirror port was free on this machine\x1b[0m
+  \x1b[2mRuns on it are still driven; nobody can watch them live.\x1b[0m
+  \x1b[1m→\x1b[0m free 31002 (lsof -nP -iTCP:31002 -sTCP:LISTEN names what holds it), then restart the agent
 \x1b[31m✗\x1b[0m \x1b[31mAndroid phone R5CT32ABCDE is unauthorized\x1b[0m
   \x1b[2mIt is not offered for runs until you do this.\x1b[0m
   \x1b[1m→\x1b[0m Tap Allow on the phone's USB debugging prompt, then re-run.
-\x1b[33m!\x1b[0m \x1b[33mAndroid phone emulator-5554 is an emulator\x1b[0m
-  \x1b[2mThe agent offers only phones on a USB cable, so this one is left out.\x1b[0m
+\x1b[33m!\x1b[0m \x1b[33mAndroid phone 192.0.2.10:5555 is reached over the network (adb connect)\x1b[0m
+  \x1b[2mThe agent offers phones on a USB cable and the emulators on this machine, so this one is left out.\x1b[0m
   \x1b[1m→\x1b[0m connect it by USB cable, or offer it too: start connect with --offer-uncabled-devices
 \x1b[31m✗\x1b[0m \x1b[31miOS: could not check — usbmuxd did not answer within 20s\x1b[0m
   \x1b[2mNo iOS phone on this machine can be listed or offered until this is fixed.\x1b[0m

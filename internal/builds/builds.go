@@ -26,6 +26,8 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/private"
 )
 
 const (
@@ -77,10 +79,7 @@ var ours = regexp.MustCompile(`^[0-9a-f]{32}\.(?:ipa|apk)(?:\.part)?$`)
 // crash left behind is removed, and nothing else is touched. It answers how many it removed.
 func Open(configDir string, o Options) (*Shelf, int, error) {
 	dir := filepath.Join(configDir, "nth-agent", "builds")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, 0, err
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := private.Folder(dir); err != nil {
 		return nil, 0, err
 	}
 	s := &Shelf{dir: dir, maxBytes: o.MaxBytes, freeBytes: o.FreeBytes, wrote: map[string]bool{}, held: map[string][]string{}}

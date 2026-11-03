@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -314,5 +315,90 @@ func exprString(fset *token.FileSet, expr ast.Expr) string {
 		return exprString(fset, e.X) + "." + e.Sel.Name
 	default:
 		return "?"
+	}
+}
+
+// AND EVERY TARGET WE BUILD REACHES A PERSON WHO INSTALLS IT (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE) — an extension
+// of the seal above, which reads every user-visible file and so cannot tell a sentence the npm reader sees from one only
+// this repository's own readers see.
+//
+//   - The README that ships to npm is the half above its NOT-FOR-THE-REGISTRY marker (publish-npm.yml cuts it there). A
+//     platform named only below it is a platform no installer is told about, so each built GOOS must be named above it.
+//   - Each target the release builds must be unpacked into the package (publish-npm.yml's loop) and chosen by the shim
+//     (publish/npm/index.js, in Node's spelling: win32-x64 for windows/amd64). A target missing from either is a binary
+//     built for nobody, or a machine told it has none.
+func TestEveryBuiltTargetIsShippedAndNamedWhereAnInstallerReads(t *testing.T) {
+	root := filepath.Join("..", "..")
+	workflows := filepath.Join(root, ".github", "workflows")
+	release, err := os.ReadFile(filepath.Join(workflows, "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var targets [][2]string
+	var goos string
+	for _, line := range strings.Split(string(release), "\n") {
+		line = strings.TrimPrefix(strings.TrimSpace(line), "- ")
+		if after, ok := strings.CutPrefix(line, "goos:"); ok {
+			goos = strings.TrimSpace(after)
+		}
+		if after, ok := strings.CutPrefix(line, "goarch:"); ok && goos != "" {
+			targets = append(targets, [2]string{goos, strings.TrimSpace(after)})
+		}
+	}
+	if len(targets) < 3 {
+		t.Fatalf("instrument guard: %d targets read from release.yml", len(targets))
+	}
+
+	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped, _, found := strings.Cut(string(readme), "<!-- NOT-FOR-THE-REGISTRY -->")
+	if !found {
+		t.Fatal("instrument guard: README.md has no NOT-FOR-THE-REGISTRY marker, so its shipped half cannot be told apart")
+	}
+	shipped = strings.ToLower(shipped)
+	names := map[string][]string{"windows": {"windows", "win32"}, "darwin": {"macos", "darwin"}, "linux": {"linux"}}
+
+	publish, err := os.ReadFile(filepath.Join(workflows, "publish-npm.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop := regexp.MustCompile(`for goos_goarch in ([a-z0-9_ ]+); do`).FindSubmatch(publish)
+	if loop == nil {
+		t.Fatal("instrument guard: publish-npm.yml's unpack loop was not found")
+	}
+	unpacked := strings.Fields(string(loop[1]))
+	shim, err := os.ReadFile(filepath.Join(root, "publish", "npm", "index.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeOS := map[string]string{"windows": "win32", "darwin": "darwin", "linux": "linux"}
+	nodeArch := map[string]string{"amd64": "x64", "arm64": "arm64"}
+
+	for _, target := range targets {
+		goos, goarch := target[0], target[1]
+		words, known := names[goos]
+		if !known {
+			t.Fatalf("release.yml builds GOOS %q and this seal has no word a reader would know it by", goos)
+		}
+		named := false
+		for _, word := range words {
+			named = named || strings.Contains(shipped, word)
+		}
+		if !named {
+			t.Errorf("release.yml builds %s/%s and the README half npm ships never names %s — the people who install it are "+
+				"never told it runs there", goos, goarch, words[0])
+		}
+		if !slices.Contains(unpacked, goos+"_"+goarch) {
+			t.Errorf("release.yml builds %s/%s and publish-npm.yml never unpacks it into the package", goos, goarch)
+		}
+		key := `"` + nodeOS[goos] + "-" + nodeArch[goarch] + `":`
+		if !bytes.Contains(shim, []byte(key)) {
+			t.Errorf("release.yml builds %s/%s and the shim has no %s entry to choose it", goos, goarch, key)
+		}
+	}
+	if len(unpacked) != len(targets) {
+		t.Errorf("publish-npm.yml unpacks %v and release.yml builds %v", unpacked, targets)
 	}
 }

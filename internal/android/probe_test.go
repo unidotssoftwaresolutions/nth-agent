@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -36,6 +37,9 @@ func runner(out string, err error) android.Runner {
 // THE HEADLINE: adb's captured empty output is an ANSWER (zero devices), while adb's captured failure
 // is NOT an inventory at all. These two fixtures are the same "empty" to a naive parser.
 func TestEmptyIsAnsweredAndFailureIsNot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake adb here is a #!/bin/sh script, which Windows cannot run; the ubuntu and macOS runs hold this, and the adb search on Windows is held by an_agent_that_drives_android_on_any_machine_test.go")
+	}
 	answered := android.Probe{Run: runner(fixture(t, "empty.txt"), nil), Enabled: true}.Outcome(context.Background())
 	if !answered.IsAnswered() {
 		t.Fatalf("nothing attached must be ANSWERED, got %s", answered.KindString())

@@ -1,3 +1,9 @@
+//go:build !windows
+
+// THE SHIM'S SEALS RUN WHERE A SHELL SCRIPT CAN STAND IN FOR THE AGENT (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): each
+// fake binary is a #!/bin/sh script, ended by Unix signals, which Windows cannot run. They run in the ubuntu job and on
+// every Mac — the Windows path of the shim among them, with the platform the shim reads set to win32.
+
 package main
 
 import (
@@ -88,12 +94,19 @@ func publishedBinaries(t *testing.T) []string {
 	t.Helper()
 	fetch := workflowText(t, "publish-npm.yml")
 	m := regexp.MustCompile(`for goos_goarch in ([a-z0-9_ ]+); do`).FindStringSubmatch(fetch)
-	if m == nil || !strings.Contains(fetch, `"publish/npm/bin/nth-agent-${goos_goarch//_/-}"`) {
+	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the Windows binary keeps its .exe, which the fetch adds for a
+	// windows_* target.
+	if m == nil || !strings.Contains(fetch, `"publish/npm/bin/nth-agent-${goos_goarch//_/-}${exe}"`) ||
+		!strings.Contains(fetch, `windows_*) exe=".exe"`) {
 		t.Fatal("instrument guard: publish-npm.yml's fetch no longer names the binaries it puts in bin/ the way this seal reads")
 	}
 	var names []string
 	for _, target := range strings.Fields(m[1]) {
-		names = append(names, "nth-agent-"+strings.ReplaceAll(target, "_", "-"))
+		name := "nth-agent-" + strings.ReplaceAll(target, "_", "-")
+		if strings.HasPrefix(target, "windows_") {
+			name += ".exe"
+		}
+		names = append(names, name)
 	}
 	return names
 }
@@ -139,8 +152,11 @@ func exitOf(t *testing.T, cmd *exec.Cmd, err error) (int, syscall.Signal) {
 	return status.ExitStatus(), 0
 }
 
-// goarchToNode is Node's spelling of each GOARCH the release builds.
-var goarchToNode = map[string]string{"amd64": "x64", "arm64": "arm64"}
+// goarchToNode is Node's spelling of each GOARCH the release builds, and goosToNode of each GOOS.
+var (
+	goarchToNode = map[string]string{"amd64": "x64", "arm64": "arm64"}
+	goosToNode   = map[string]string{"darwin": "darwin", "linux": "linux", "windows": "win32"}
+)
 
 func TestTheShimRunsTheBinaryBuiltForThisMachineWithItsArguments(t *testing.T) {
 	dir, binaries := shimPackage(t)
@@ -148,8 +164,8 @@ func TestTheShimRunsTheBinaryBuiltForThisMachineWithItsArguments(t *testing.T) {
 		t.Fatalf("instrument guard: %d binaries read from publish-npm.yml", len(binaries))
 	}
 	for _, binary := range binaries {
-		parts := strings.Split(strings.TrimPrefix(binary, "nth-agent-"), "-")
-		platform, arch := parts[0], goarchToNode[parts[1]]
+		parts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(binary, "nth-agent-"), ".exe"), "-")
+		platform, arch := goosToNode[parts[0]], goarchToNode[parts[1]]
 		out, errOut, code, sig := runShim(t, dir, platform, arch, "echo", "one", "two words", "--flag")
 		want := "ran " + binary + "\narg [one]\narg [two words]\narg [--flag]\n"
 		if out != want || code != 0 || sig != 0 || errOut != "" {

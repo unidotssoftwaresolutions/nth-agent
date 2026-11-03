@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"net"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,8 +79,8 @@ func TestTheMacListNamesTheAccountThatListens(t *testing.T) {
 // THE REAL KERNEL: a listener this test opens, on 127.0.0.1 and on every address (Go's ":0" is a dual-stack socket), is
 // found to be this account's from the connection this process dialled to it — before it is accept()ed and after.
 func TestThisMachineNamesTheAccountBehindAConnectionItDialled(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("the kernel is asked only on macOS and Linux")
+	if !supportedHere() {
+		t.Skip("the kernel is asked only on macOS, Linux and Windows")
 	}
 	for _, address := range []string{"127.0.0.1:0", ":0"} {
 		t.Run(address, func(t *testing.T) {

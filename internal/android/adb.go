@@ -31,7 +31,7 @@ func NewAdbRunner(owner localconn.Owner) Runner {
 }
 
 func execAdb(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "adb", args...)
+	cmd := exec.CommandContext(ctx, Program(), args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		text := strings.TrimSpace(string(out))

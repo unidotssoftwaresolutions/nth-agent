@@ -70,6 +70,38 @@ jobs:
       - run: go test ./... -race
         timeout-minutes: 20
 
+  # THE UNIT TESTS ON WINDOWS (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the agent is built for Windows now, and the code
+  # that only Windows runs — the owner of a loopback connection (internal/netcap/peer_windows.go), the locks, the private
+  # files' access list, the console — is tested where it runs, against the real system calls. Build, vet and `go test`,
+  # like the job above, WITHOUT -race: the race detector on Windows needs cgo and a C compiler on the runner and roughly
+  # doubles the run, and the code it would watch for races is the same code the ubuntu job already runs under -race;
+  # the Windows-only files start no goroutine of their own.
+  #
+  # Tests that exercise a Unix-only tool — a shell-script fake, a workflow step run in bash, a Unix signal or file mode —
+  # skip here and say which; they run in the job above.
+  windows-unit-tests:
+    runs-on: windows-latest
+    # Every job ends on its own (CI_THAT_ALWAYS_ENDS).
+    timeout-minutes: 30
+    steps:
+      # LINE ENDINGS AS EVERY OTHER RUNNER CHECKS THEM OUT. Git for Windows turns LF into CRLF on checkout by default, and
+      # the goldens, the README and workflow seals and the toolchain-copy comparison read the bytes the repository holds.
+      # Set for this job's git, before the checkout.
+      - run: git config --global core.autocrlf false
+        timeout-minutes: 2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+        timeout-minutes: 10
+      - run: go vet ./...
+        timeout-minutes: 10
+      - run: go test ./...
+        timeout-minutes: 20
+
   cross-compile:
     runs-on: ubuntu-latest
     # Every job ends on its own (CI_THAT_ALWAYS_ENDS): one `go build` per target.
@@ -83,6 +115,10 @@ jobs:
             goarch: amd64
           - goos: linux
             goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -91,7 +127,8 @@ jobs:
         with:
           go-version-file: go.mod
       # The targets we compile are exactly the targets this repo may claim (see the platform-claims
-      # seal in internal/inventory). Windows is deliberately absent — when we add the target we add
-      # the sentence, not before.
+      # seal in internal/inventory): when we add a target we add the sentence, not before. Windows and
+      # Linux on arm64 joined on 2026-11-03 (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE), with the
+      # README's and the CHANGELOG's sentences.
       - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
         timeout-minutes: 10

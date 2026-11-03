@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -71,6 +72,9 @@ func shellQuote(path string) string { return "'" + strings.ReplaceAll(path, "'",
 
 // A customer reads this sentence. It must name the CAUSE, not adb's progress narration.
 func TestTheReasonNamesTheCauseNotAProgressLine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake adb here is a #!/bin/sh script, which Windows cannot run; the ubuntu and macOS runs hold this, and the adb search on Windows is held by an_agent_that_drives_android_on_any_machine_test.go")
+	}
 	outcome := android.Probe{Run: productionRunnerShape(t, "server-not-acking.txt"), Enabled: true}.
 		Outcome(context.Background())
 

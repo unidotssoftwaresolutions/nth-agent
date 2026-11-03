@@ -217,11 +217,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p publish/npm/bin
-          for goos_goarch in darwin_arm64 darwin_amd64 linux_amd64; do
+          for goos_goarch in darwin_arm64 darwin_amd64 linux_amd64 linux_arm64 windows_amd64; do
             archive="dist/nth-agent_${TAG}_${goos_goarch}.tar.gz"
             test -f "$archive" || { echo "release $TAG has no asset $archive" >&2; exit 1; }
-            tar -xzf "$archive" -C dist nth-agent
-            mv dist/nth-agent "publish/npm/bin/nth-agent-${goos_goarch//_/-}"
+            # The Windows binary is nth-agent.exe in its archive, and keeps the extension in the package: Windows runs a
+            # program only by it.
+            exe=""
+            case "$goos_goarch" in windows_*) exe=".exe" ;; esac
+            tar -xzf "$archive" -C dist "nth-agent${exe}"
+            mv "dist/nth-agent${exe}" "publish/npm/bin/nth-agent-${goos_goarch//_/-}${exe}"
           done
           # upload-artifact and tar round-trips do not reliably preserve the executable bit; npm packs the mode
           # it finds, so a package whose binaries are not executable installs fine and fails at the first run.

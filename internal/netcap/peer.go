@@ -27,6 +27,8 @@ import (
 //     SO_PEERCRED answers only for Unix-domain sockets, and this one is TCP, so it does not apply here.
 //   - macOS: the net.inet.tcp.pcblist64 sysctl — struct xtcpcb64 from the SDK's public <netinet/tcp_var.h>, the list
 //     netstat reads — whose socket part carries so_uid. No root, no cgo.
+//   - Windows: GetExtendedTcpTable names the process behind each socket, and the process's token names its account
+//     (peer_tcptable.go, peer_windows.go).
 //   - Anywhere else: capture does not run (capture.Supported), and the answer is "not found".
 //
 // NOT FOUND IS REFUSED: a connection whose owner cannot be found is not known to be ours. And so that a system where the
@@ -72,7 +74,11 @@ func OwnerOfListenerBehind(c net.Conn) (int, bool) {
 
 // MayUseTheProxy says whether a connection opened by uid may use a capture proxy: one opened by this account, or by the
 // machine's administrator (root). THE ONE HOME of that rule.
-func MayUseTheProxy(uid int) bool { return uid == os.Geteuid() || uid == 0 }
+func MayUseTheProxy(uid int) bool { return uid == ThisAccount() || uid == 0 }
+
+// ThisAccount is the number this package gives the account this process runs as: os.Geteuid() — which is -1 on Windows,
+// where the owner lookup answers -1 for this account too (peer_tcptable.go).
+func ThisAccount() int { return os.Geteuid() }
 
 // ErrPeerCheck is a peer check that does not work on this machine.
 var ErrPeerCheck = errors.New("this machine cannot tell which account opened a connection to the capture proxy")

@@ -56,7 +56,7 @@ func TestALeftOutPhoneIsNamedOnceWithTheFlag(t *testing.T) {
 	cfg.Probes = func(context.Context) []inventory.Outcome {
 		return []inventory.Outcome{
 			inventory.WithLeftOut(inventory.Answered(inventory.Android, []inventory.Offerable{{ID: "R5CT30ABCDE"}}, nil),
-				[]inventory.LeftOut{{ID: "emulator-5554", How: "an emulator"}, {ID: "192.0.2.10:5555", How: "reached over the network (adb connect)"}}),
+				[]inventory.LeftOut{{ID: "adb-DUMMY0001-AbCdEf._adb-tls-connect._tcp", How: "reached over Wi-Fi (wireless debugging)"}, {ID: "192.0.2.10:5555", How: "reached over the network (adb connect)"}}),
 			inventory.WithLeftOut(inventory.Answered(inventory.IOS, nil, nil),
 				[]inventory.LeftOut{{ID: "00008030-WIFI", How: "reached over Wi-Fi or the network"}}),
 		}
@@ -66,10 +66,12 @@ func TestALeftOutPhoneIsNamedOnceWithTheFlag(t *testing.T) {
 	}
 	text := out.String()
 	for _, want := range []string{
-		"not offered, because the agent offers the farm only phones on this machine's USB cable:",
-		"  android emulator-5554 — an emulator",
-		"  android 192.0.2.10:5555 — reached over the network (adb connect)",
-		"  ios 00008030-WIFI — reached over Wi-Fi or the network",
+		// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): an emulator on this machine is offered now, so the left-out
+		// Android phone here is a Wi-Fi one; the sentence names the emulators; and the platforms are written Android and iOS.
+		"not offered, because the agent offers the farm only phones on this machine's USB cable and the emulators running on it:",
+		"  Android adb-DUMMY0001-AbCdEf._adb-tls-connect._tcp — reached over Wi-Fi (wireless debugging)",
+		"  Android 192.0.2.10:5555 — reached over the network (adb connect)",
+		"  iOS 00008030-WIFI — reached over Wi-Fi or the network",
 		// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): what to do is the → line of the problem now.
 		"  → to offer these too, restart with: npx nthcase-agent@latest connect … --offer-uncabled-devices",
 	} {
@@ -79,7 +81,7 @@ func TestALeftOutPhoneIsNamedOnceWithTheFlag(t *testing.T) {
 	}
 	var body map[string]any
 	_ = json.Unmarshal(stub.lastRegisterBody.Load().([]byte), &body)
-	if strings.Contains(string(stub.lastRegisterBody.Load().([]byte)), "emulator-5554") ||
+	if strings.Contains(string(stub.lastRegisterBody.Load().([]byte)), "adb-DUMMY0001") ||
 		strings.Contains(string(stub.lastRegisterBody.Load().([]byte)), "00008030-WIFI") {
 		t.Fatalf("a left-out phone is never named to the farm: %s", stub.lastRegisterBody.Load())
 	}

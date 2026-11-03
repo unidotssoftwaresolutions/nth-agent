@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -16,9 +15,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/android"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/liveview"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/private"
 )
 
 // ── THE CAPTURE CONTROLLER: ONLY WHERE EVERY GATE HOLDS, AND ALWAYS GIVING THE PHONE BACK ───────────────────────
@@ -68,7 +69,7 @@ type Config struct {
 	Out          io.Writer // the console: one line when something changes
 	AgentVersion string
 	Now          func() time.Time
-	// LookPath finds adb, for the declaration; nil = exec.LookPath. GOOS is runtime.GOOS unless a test says otherwise.
+	// LookPath finds adb, for the declaration; nil = android.LookPath (PATH, then the Android SDK). GOOS is runtime.GOOS unless a test says otherwise.
 	LookPath func(string) (string, error)
 	GOOS     string
 	// PortFree checks a capture port; nil = liveview.LoopbackFree, the agent's own loopback check.
@@ -129,7 +130,7 @@ func NewController(cfg Config) *Controller {
 		cfg.Now = time.Now
 	}
 	if cfg.LookPath == nil {
-		cfg.LookPath = exec.LookPath
+		cfg.LookPath = android.LookPath
 	}
 	if cfg.GOOS == "" {
 		cfg.GOOS = runtime.GOOS
@@ -163,7 +164,9 @@ func NewController(cfg Config) *Controller {
 
 // Supported says whether this system can run capture: the systems this agent ships for, where it can keep the CA's key
 // to one user and lock a phone between processes.
-func Supported(goos string) bool { return (goos == "darwin" || goos == "linux") && lockingSupported }
+func Supported(goos string) bool {
+	return (goos == "darwin" || goos == "linux" || goos == "windows") && lockingSupported
+}
 
 // Availability is this machine's capture declaration for the farm, in the farm's own words (NodeCaptureAvailability):
 // Disabled when capture is off here; Unavailable when it is on and this machine cannot run it now (no adb, or a CA it
@@ -224,7 +227,7 @@ func (c *Controller) caProblem() string {
 		folder bool
 	}{{c.cfg.Store.CADir(), true}, {netcap.KeyPathIn(c.cfg.Store.CADir()), false}} {
 		info, err := os.Lstat(check.path)
-		if err != nil || info.IsDir() != check.folder || info.Mode().Perm()&0o077 != 0 || (!check.folder && !info.Mode().IsRegular()) {
+		if err != nil || info.IsDir() != check.folder || private.Problem(check.path, info) != "" || (!check.folder && !info.Mode().IsRegular()) {
 			return "its key or its folder is missing or readable by other users"
 		}
 	}

@@ -843,9 +843,13 @@ func (n *narrator) banner(cfg Config, newer string, outcomes []inventory.Outcome
 	if newer != "" && olderThan(cfg.AgentVersion, newer) {
 		release = m.Look("· v" + strings.TrimPrefix(newer, "v") + " is out — how to update is below")
 	}
-	var serves []string
+	var serves, notHere []string
 	for _, o := range outcomes {
-		if !o.IsNotAsked() {
+		switch {
+		case o.NotHereBecause() != "":
+			// A PLATFORM THIS SYSTEM CANNOT SERVE — iOS on Windows — said once, here, and never as a problem.
+			notHere = append(notHere, platformName(o.Platform())+": "+o.NotHereBecause())
+		case !o.IsNotAsked():
 			serves = append(serves, platformName(o.Platform()))
 		}
 	}
@@ -855,6 +859,9 @@ func (n *narrator) banner(cfg Config, newer string, outcomes []inventory.Outcome
 	served := strings.Join(serves, ", ")
 	if served == "" {
 		served = "nothing — every platform is skipped (--skip)"
+	}
+	for _, line := range notHere {
+		served += m.Dim(" · " + line)
 	}
 	label := func(name string) string { return m.Dim(fmt.Sprintf("%-10s", name)) }
 	n.out.Say(
@@ -917,7 +924,7 @@ func (n *narrator) narrateOutcomes(outcomes []inventory.Outcome) {
 	for _, o := range outcomes {
 		switch {
 		case o.IsAnswered():
-			line := fmt.Sprintf("%s: %d usable, %d attached but unusable", o.Platform(), len(o.Offerable()), len(o.Unusable()))
+			line := fmt.Sprintf("%s: %d usable, %d attached but unusable", platformName(o.Platform()), len(o.Offerable()), len(o.Unusable()))
 			if len(o.Offerable()) > 0 {
 				n.good("%s", line)
 			} else {
@@ -928,11 +935,13 @@ func (n *narrator) narrateOutcomes(outcomes []inventory.Outcome) {
 					Why: "It is not offered for runs until you do this.", Do: u.Remedy})
 			}
 		case o.IsCouldNotAsk():
-			n.problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s: could not check — %s", o.Platform(), o.Reason()),
+			n.problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s: could not check — %s", platformName(o.Platform()), o.Reason()),
 				Why: fmt.Sprintf("No %s phone on this machine is listed or offered until this is fixed.", platformName(o.Platform())),
 				Do:  o.Remedy()})
+		case o.NotHereBecause() != "":
+			// Said once, in the banner.
 		default:
-			n.say("%s: not checked on this host", o.Platform())
+			n.say("%s: not checked on this host", platformName(o.Platform()))
 		}
 	}
 	n.last = outcomes
@@ -953,14 +962,14 @@ func (n *narrator) sayLeftOut(outcomes []inventory.Outcome) {
 				continue
 			}
 			n.leftOutSaid[key] = true
-			phones = append(phones, fmt.Sprintf("%s %s — %s", o.Platform(), d.ID, d.How))
+			phones = append(phones, fmt.Sprintf("%s %s — %s", platformName(o.Platform()), d.ID, d.How))
 		}
 	}
 	if len(phones) == 0 {
 		return
 	}
 	n.problem(ui.Problem{Level: ui.LevelLook,
-		What:  "not offered, because the agent offers the farm only phones on this machine's USB cable:",
+		What:  "not offered, because the agent offers the farm only phones on this machine's USB cable and the emulators running on it:",
 		Items: phones,
 		Why:   "The phones on the cable are offered as before.",
 		Do:    OfferUncabledRemedy(n.install)})
@@ -1018,9 +1027,9 @@ func (n *narrator) offerSkipHints(outcomes []inventory.Outcome) {
 		if !n.hinted[platform] && now.Sub(since) >= n.hintAfter {
 			n.hinted[platform] = true
 			n.problem(ui.Problem{Level: ui.LevelLook,
-				What: fmt.Sprintf("%s has not answered for %s", platform, now.Sub(since).Round(time.Second)),
-				Why:  fmt.Sprintf("This agent keeps asking about %s devices on every heartbeat.", platform),
-				Do:   fmt.Sprintf("if this machine will never drive %s devices, start the agent with --skip %s and it will stop asking.", platform, platform)})
+				What: fmt.Sprintf("%s has not answered for %s", platformName(platform), now.Sub(since).Round(time.Second)),
+				Why:  fmt.Sprintf("This agent keeps asking about %s devices on every heartbeat.", platformName(platform)),
+				Do:   fmt.Sprintf("if this machine will never drive %s devices, start the agent with --skip %s and it will stop asking.", platformName(platform), platform)})
 		}
 	}
 }

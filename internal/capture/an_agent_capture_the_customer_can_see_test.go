@@ -76,6 +76,9 @@ func TestAnotherAccountsConnectionToACaptureIsRefusedAndSaidOnce(t *testing.T) {
 	phone := samsung("R5CT30ABCDE")
 	m := newMachine(t, phone)
 	other := os.Geteuid() + 1
+	if other == 0 {
+		other = 1002 // on Windows this account is -1, and -1+1 would be root (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE)
+	}
 	var fromAnotherAccount atomic.Bool
 	ctl := m.controller(func(cfg *Config) {
 		cfg.PeerOwner = func(c net.Conn) (int, bool) {
