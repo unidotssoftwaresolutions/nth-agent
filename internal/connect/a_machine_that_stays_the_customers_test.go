@@ -70,7 +70,8 @@ func TestALeftOutPhoneIsNamedOnceWithTheFlag(t *testing.T) {
 		"  android emulator-5554 — an emulator",
 		"  android 192.0.2.10:5555 — reached over the network (adb connect)",
 		"  ios 00008030-WIFI — reached over Wi-Fi or the network",
-		"  to offer these too, restart with: npx nthcase-agent@latest connect … --offer-uncabled-devices",
+		// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): what to do is the → line of the problem now.
+		"  → to offer these too, restart with: npx nthcase-agent@latest connect … --offer-uncabled-devices",
 	} {
 		if strings.Count(text, want) != 1 {
 			t.Fatalf("connect says %q exactly once over three ticks, got:\n%s", want, text)

@@ -25,6 +25,7 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/appium"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/browserstack"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/capture"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/command"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/connect"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/doctor"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
@@ -35,8 +36,8 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/render"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/state"
-	"github.com/unidotssoftwaresolutions/nth-agent/internal/termwrap"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/tunnel"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/wda"
 )
 
@@ -245,7 +246,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 func runDevices(inv *invocation, stdout, stderr io.Writer) int {
 	skip, err := connect.ParseSkip(inv.Values["--skip"])
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+		refuse(stderr, inv.Bools["--no-color"], skipMistake(err))
 		return exitMistake
 	}
 
@@ -263,10 +264,11 @@ func runDevices(inv *invocation, stdout, stderr io.Writer) int {
 	if inv.Bools["--json"] {
 		err = render.JSON(stdout, outcomes, liveView)
 	} else {
-		err = render.Human(stdout, outcomes, liveView)
+		// DRESSED HERE, the only place that knows both the real stdout and what the person typed (internal/ui).
+		err = render.Styled(stdout, ui.For(stdout, ui.Asked{NoColor: inv.Bools["--no-color"]}), outcomes, liveView)
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "could not write the report: %v\n", err)
+		refuse(stderr, inv.Bools["--no-color"], reportNotWritten(err))
 		return 1
 	}
 	return render.ExitCode(outcomes)
@@ -302,7 +304,7 @@ func doctorTeamID(inv *invocation) (string, string) {
 func runDoctor(inv *invocation, stdout, stderr io.Writer) int {
 	skip, err := connect.ParseSkip(inv.Values["--skip"])
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+		refuse(stderr, inv.Bools["--no-color"], skipMistake(err))
 		return exitMistake
 	}
 
@@ -365,12 +367,12 @@ func runDoctor(inv *invocation, stdout, stderr io.Writer) int {
 		// WHO DECIDES THE DRESSING: this call site, because it is the only thing that knows both the real stdout
 		// (is it a terminal?) and what the person typed. The renderer is handed two answers and guesses neither.
 		err = doctor.Human(stdout, report, doctor.Options{
-			Color: doctor.ColorFor(stdout, inv.Bools["--no-color"]),
-			Why:   inv.Bools[doctor.WhyFlag],
+			Mode: ui.For(stdout, ui.Asked{NoColor: inv.Bools["--no-color"]}),
+			Why:  inv.Bools[doctor.WhyFlag],
 		})
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "could not write the report: %v\n", err)
+		refuse(stderr, inv.Bools["--no-color"], reportNotWritten(err))
 		return 1
 	}
 	return doctor.ExitCode(report)
@@ -402,9 +404,14 @@ func cloudRowsFrom(specs []browserstack.DeviceSpec, catalogue []browserstack.Cat
 
 // runConnect wires the standing loop: real probes, real clock, the credential from the environment.
 func runConnect(inv *invocation, stdout, stderr io.Writer) int {
-	// FOLDED TO THE TERMINAL, AND ONLY IN ONE (AN_AGENT_THAT_KNOWS_IT_IS_OLD item 4): everything connect says goes through
-	// stdout, so this is the one place it is decided. A log or a pipe gets every line whole.
-	stdout = termwrap.For(stdout)
+	// ONE CONSOLE FOR EVERYTHING CONNECT SAYS (AN_AGENT_THAT_SPEAKS_PLAINLY): the loop, the drive tunnel and capture all
+	// speak into it, dressed by internal/ui — coloured and folded to the terminal, and only in one (AN_AGENT_THAT_KNOWS_IT_IS_OLD
+	// item 4); a log or a pipe gets every line whole and plain. This is the one place it is decided.
+	noColor := inv.Bools["--no-color"]
+	console := ui.NewConsole(stdout, ui.For(stdout, ui.Asked{NoColor: noColor}))
+	console.Verbose = inv.Bools["--verbose"]
+	defer console.Done()
+	stdout = console
 	// Flags win over the environment; the environment is the preferred home for the token (see usage).
 	farmURL := firstNonEmpty(inv.first("--farm"), os.Getenv("NTH_AGENT_FARM"))
 	token := firstNonEmpty(inv.first("--token"), os.Getenv("NTH_AGENT_TOKEN"))
@@ -439,18 +446,22 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 	for _, raw := range cloudSpecArgs {
 		spec, err := browserstack.ParseSpec(raw)
 		if err != nil {
-			fmt.Fprintf(stderr, "--browserstack-device: %v\n", err)
+			refuse(stderr, noColor, ui.Problem{What: "--browserstack-device: " + err.Error(), Why: "Nothing was started.",
+				Do: `write each device as "Name|OsVersion", as in --browserstack-device "Google Pixel 9|15.0"`})
 			return exitMistake
 		}
 		cloudSpecs = append(cloudSpecs, spec)
 	}
 	skip, err := connect.ParseSkip(inv.Values["--skip"])
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+		refuse(stderr, noColor, skipMistake(err))
 		return exitMistake
 	}
 	if farmURL == "" || token == "" {
-		fmt.Fprintln(stderr, "connect needs the farm URL (--farm or NTH_AGENT_FARM) and the workspace agent token (NTH_AGENT_TOKEN preferred; --token accepted).")
+		refuse(stderr, noColor, ui.Problem{
+			What: "connect needs the farm URL (--farm or NTH_AGENT_FARM) and the workspace agent token (NTH_AGENT_TOKEN preferred; --token accepted).",
+			Why:  "Nothing was started: without both, this machine has nowhere to register.",
+			Do:   "set NTH_AGENT_TOKEN with the prompt line " + command.Line("--help") + " prints, then run: " + command.Line("connect --farm URL")})
 		return exitMistake
 	}
 	// HALF-CONFIGURED IS A MISTAKE, NOT A STATE. Reading one-of-two as "configured" sends up a session that
@@ -459,12 +470,15 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 	// A DEVICE WITH NO ACCOUNT IS THE SAME MISTAKE AS HALF A CREDENTIAL, and it gets the same treatment: the
 	// agent would silently publish nothing and the person would watch an empty Devices screen.
 	if len(cloudSpecs) > 0 && !browserStack.Configured() {
-		fmt.Fprintln(stderr, "--browserstack-device needs a BrowserStack account: supply --browserstack-user and "+
-			"--browserstack-key (or NTH_AGENT_BROWSERSTACK_USER and NTH_AGENT_BROWSERSTACK_KEY) as well.")
+		refuse(stderr, noColor, ui.Problem{What: "--browserstack-device needs a BrowserStack account.",
+			Why: "Nothing was started: the agent would offer devices nobody can open a session on.",
+			Do:  "supply --browserstack-user and --browserstack-key (or NTH_AGENT_BROWSERSTACK_USER and NTH_AGENT_BROWSERSTACK_KEY) as well."})
 		return exitMistake
 	}
 	if browserStack.Partial() {
-		fmt.Fprintln(stderr, "BrowserStack needs BOTH halves: --browserstack-user and --browserstack-key (or NTH_AGENT_BROWSERSTACK_USER and NTH_AGENT_BROWSERSTACK_KEY). Only one was supplied.")
+		refuse(stderr, noColor, ui.Problem{What: "BrowserStack needs BOTH halves: --browserstack-user and --browserstack-key (or NTH_AGENT_BROWSERSTACK_USER and NTH_AGENT_BROWSERSTACK_KEY). Only one was supplied.",
+			Why: "Nothing was started: half a credential cannot open a session, and ignoring it would drive your local Appium instead.",
+			Do:  "supply the other half, or neither"})
 		return exitMistake
 	}
 
@@ -486,17 +500,23 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 			//
 			// So nothing is published and the person is told, in words they can act on. The local path is
 			// untouched: an agent with a phone on the desk keeps offering it.
-			fmt.Fprintf(stdout,
-				"could not read your BrowserStack device list, so no cloud devices are being offered this run: %v\n"+
-					"  Nothing is wrong with the devices you configured — they were not checked. The agent will "+
-					"keep running and any local devices are unaffected; restart it once the list is reachable.\n", err)
+			console.Say(console.Mode().Problem(ui.Problem{Level: ui.LevelLook,
+				What: "could not read your BrowserStack device list, so no cloud devices are being offered this run",
+				Why:  "Nothing is wrong with the devices you configured — they were not checked. The agent will keep running and any local devices are unaffected.",
+				Do:   "restart it once the list is reachable",
+				Raw:  farm.OneLineForTerminal(err.Error())}, console.Width(), console.Verbose)...)
 		default:
 			if refusal := browserstack.RefuseUnofferedSpecs(cloudSpecs, catalogue); refusal != "" {
-				fmt.Fprintln(stderr, refusal)
+				refuse(stderr, noColor, ui.Problem{What: refusal, Why: "Nothing was started.",
+					Do: "name only devices your account offers in --browserstack-device"})
 				return exitMistake
 			}
-			fmt.Fprintf(stdout, "%d BrowserStack device(s) checked against the account's list of %d and offered\n",
-				len(cloudSpecs), len(catalogue))
+			devices := "devices"
+			if len(cloudSpecs) == 1 {
+				devices = "device"
+			}
+			sayTo(stdout, ui.MarkOK, fmt.Sprintf("%d BrowserStack %s checked against the account's list of %d and offered",
+				len(cloudSpecs), devices, len(catalogue)))
 		}
 		// ONE CALL, BOTH PATHS, AND THE DEGRADED ONE IS DERIVED RATHER THAN BRANCHED. On the failure path
 		// `catalogue` is nil, so no spec matches an entry and no row is built — the "publish nothing when the
@@ -509,20 +529,26 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 	var configDir string
 	configDir, err = os.UserConfigDir()
 	if err != nil {
-		fmt.Fprintf(stderr, "cannot locate the user config directory: %v\n", err)
+		refuse(stderr, noColor, ui.Problem{What: "cannot locate the user config directory: " + err.Error(),
+			Why: "The agent keeps this machine's identity there, so it cannot start without one.",
+			Do:  "make sure HOME is set to your home folder, then start the agent"})
 		return 1
 	}
 	// ONE connect PER STATE FOLDER (A_MACHINE_THAT_STAYS_THE_CUSTOMERS): held for as long as this one runs, and
 	// taken before the identity is read, so a second one is refused before it registers anything.
 	releaseFolder, err := state.HoldConnect(configDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+		refuse(stderr, noColor, ui.Problem{What: err.Error(),
+			Why: "One machine holds one identity: a second connect beside a running one would offer the same phones twice.",
+			Do:  "use the connect that is running, or stop it (Ctrl-C in its terminal) and start this one"})
 		return 1
 	}
 	defer releaseFolder()
 	nodeID, err := state.LoadOrCreateNodeID(configDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "cannot establish a stable node identity: %v\n", err)
+		refuse(stderr, noColor, ui.Problem{What: "cannot establish a stable node identity: " + err.Error(),
+			Why: "The farm knows this machine by it, so the agent cannot start without one.",
+			Do:  "make sure this account can write the agent's config folder (" + configDir + "), then start the agent"})
 		return 1
 	}
 	hostName, _ := os.Hostname()
@@ -536,7 +562,7 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 	// and still answers the farm's handback question and hands back what an earlier run left on a phone.
 	captureReachesLocal := inv.Bools[netcap.AllowLocalFlag]
 	if captureReachesLocal {
-		fmt.Fprintln(stdout, capture.LocalNetworkOpen)
+		sayTo(stdout, ui.MarkLook, capture.LocalNetworkOpen)
 	}
 	captureController := capture.NewController(capture.Config{
 		Store: capture.StoreIn(configDir), Adb: capture.RealAdb, Out: stdout, AgentVersion: version,
@@ -568,7 +594,8 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 		// family this whole slice is about. The tunnel below is the only thing that ever forwards a session, so
 		// this is where the requirement becomes real.
 		if browserstack.MissingApp(browserStack, browserStackApp) {
-			fmt.Fprintln(stderr, browserstack.MissingAppMessage)
+			refuse(stderr, noColor, ui.Problem{What: browserstack.MissingAppMessage, Why: "Nothing was started.",
+				Do: "add --browserstack-app with the bs:// id an upload printed, or your custom_id: " + command.Line("upload --file PATH") + " makes one"})
 			return exitMistake
 		}
 		drive := tunnel.New(tunnel.Config{
@@ -647,7 +674,8 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 	if raw := inv.first("--wda-idle-after"); raw != "" {
 		parsed, err := time.ParseDuration(raw)
 		if err != nil || parsed <= 0 {
-			fmt.Fprintf(stderr, "--wda-idle-after wants a positive duration like 30s or 2m, not %q\n", raw)
+			refuse(stderr, noColor, ui.Problem{What: fmt.Sprintf("--wda-idle-after wants a positive duration like 30s or 2m, not %q", raw),
+				Why: "Nothing was started.", Do: "give it one, as in --wda-idle-after 2m"})
 			return exitMistake
 		}
 		idleAfter = parsed
@@ -712,8 +740,12 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 
 		// HOW THIS AGENT WAS STARTED, which decides how it says a newer release is installed (AN_AGENT_THAT_KNOWS_IT_IS_OLD).
 		Install: connect.HowStarted(ownProgram(), os.Getenv, isFile),
+
+		// THE ONE CONSOLE the tunnel and capture speak into too, dressed once, above.
+		Console: console,
 	}
 	runErr := connect.Run(ctx, cfg)
+	console.Done()
 	if code := interrupted(); code != 0 {
 		// A STOP SAYS GOODBYE (AN_AGENT_THAT_KNOWS_IT_IS_OLD item 2), now that the loop has stopped: a registration sent
 		// after it would bring the node back. A loop that ended on its own — a refused token, a refused identity, an unsafe

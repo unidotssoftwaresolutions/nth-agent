@@ -95,12 +95,15 @@ func TestA2xxTheAgentCannotUseIsAnAnswerNotAFarmGone(t *testing.T) {
 	if strings.Contains(transcript, "cannot reach the farm") || strings.Contains(transcript, "connection to the farm restored") {
 		t.Fatalf("the farm answered every call, and the person was told it could not be reached:\n%s", transcript)
 	}
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the decoder's own error is a Go error, and a Go error is never printed on its
+	// own any more — it moved from the line's parentheses to the dim line --verbose shows (TestTheRawErrorIsShownOnlyWhenAsked).
+	// The agent's own words for what was wrong with each answer stay on the line.
 	const retry = " — retrying with backoff"
 	for _, want := range []string{
-		"the farm answered this machine's registration (200), and this agent could not use the answer: it was not readable (invalid character '<' looking for beginning of value)" + retry,
+		"the farm answered this machine's registration (200), and this agent could not use the answer: it was not readable" + retry,
 		"the farm answered this machine's registration (200), and this agent could not use the answer: it was larger than the 1048576 bytes this agent reads" + retry,
-		"the farm answered this machine's registration (200), and this agent could not use the answer: it had an unexpected shape (json: cannot unmarshal number into Go struct field registerData.nodeId of type string)" + retry,
-		"the farm answered this machine's registration (200), and this agent could not use the answer: it could not be read (unexpected EOF)" + retry,
+		"the farm answered this machine's registration (200), and this agent could not use the answer: it had an unexpected shape" + retry,
+		"the farm answered this machine's registration (200), and this agent could not use the answer: it could not be read" + retry,
 		"the farm took this machine's registration",
 	} {
 		if strings.Count(transcript, want+"\n") != 1 {

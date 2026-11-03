@@ -125,8 +125,11 @@ func TestDevicesAndDoctorSayTheSameSentenceAboutTheSamePhone(t *testing.T) {
 	if lines != 2 {
 		t.Fatalf("`devices` prints one live-view line per usable phone and none for the unusable one:\n%s", listing.String())
 	}
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): `devices` folds its lines at the report's width now, as doctor always did,
+	// so the sentence is compared with the folding taken out — what this seal holds is the SENTENCE, not where a line ends.
+	flat := strings.Join(strings.Fields(listing.String()), " ")
 	for name, c := range liveViewChecks(report) {
-		if !strings.Contains(listing.String(), c.Detail) {
+		if !strings.Contains(flat, c.Detail) {
 			t.Fatalf("%s: `doctor` says %q and `devices` does not say the same:\n%s", name, c.Detail, listing.String())
 		}
 	}

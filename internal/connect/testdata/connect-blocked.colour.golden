@@ -1,0 +1,15 @@
+\r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[Knth-agent v0.5.4 \x1b[2m· the farm names no newer release\x1b[0m
+\x1b[2mFarm      \x1b[0mhttps://farm.example\x1b[2m · node 11111111-2222-3333-4444-555555555555\x1b[0m
+\x1b[2mServes    \x1b[0mAndroid, iOS
+\x1b[2mStop      \x1b[0mCtrl-C \x1b[2m— hands the phones back and tells the farm this machine is leaving\x1b[0m
+\r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[K\x1b[1m\x1b[31m1 thing stops runs on this machine\x1b[0m
+\r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[K\x1b[31m✗\x1b[0m \x1b[31mdevices are not being offered — this agent was started without --appium, so nothing attached here\x1b[0m
+  \x1b[31mcan be driven\x1b[0m
+  \x1b[2mYour phones stay visible on the Devices screen either way — they are reported as present, just not\x1b[0m
+  \x1b[2moffered.\x1b[0m
+  \x1b[1m→\x1b[0m run `npx nthcase-agent@latest doctor` to see what this machine is missing, then restart with
+    --appium URL
+\r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[K\x1b[32m✓\x1b[0m registered as node 11111111-2222-3333-4444-555555555555
+\r\x1b[K\x1b[2m·\x1b[0m connecting to https://farm.example\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[32m✓\x1b[0m android: 2 usable, 0 attached but unusable
+\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[2m·\x1b[0m ios: 0 usable, 0 attached but unusable
+\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · waiting for the first heartbeat\x1b[0m\r\x1b[K\x1b[32m✓\x1b[0m \x1b[2mconnected · the farm took a heartbeat at 12:00:10\x1b[0m\r\x1b[K

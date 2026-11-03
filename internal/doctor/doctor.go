@@ -24,6 +24,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -157,6 +158,9 @@ type Env struct {
 
 	// AppiumURL is what the person told us, or empty. We do not guess one.
 	AppiumURL string
+	// System is the system this agent runs on (runtime.GOOS), so an install step is said in the words of THIS machine:
+	// brew on a Mac, the step that works on any distribution on Linux (AN_AGENT_THAT_SPEAKS_PLAINLY). Empty says both.
+	System string
 	// IosDeveloperMode asks every attached iPhone whether Developer Mode is on — internal/ios.ReadDeveloperMode,
 	// a pure read of the phone's mobile_image_mounter service. A seam, so a test can plant a machine rather than
 	// need a handset. Nil ⇒ the check reports that it could not ask.
@@ -195,6 +199,7 @@ func RealEnv(appiumURL string, appiumStatus func(context.Context, string) error,
 	wdaProjectPath string, iosLocalPortStatus func(ctx context.Context, port uint16) wda.RunnerStatus) Env {
 	return Env{
 		LookPath: exec.LookPath,
+		System:   runtime.GOOS,
 		Run: func(ctx context.Context, name string, args ...string) (string, error) {
 			out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 			return string(out), err

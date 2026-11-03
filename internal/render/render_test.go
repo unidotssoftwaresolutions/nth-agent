@@ -170,7 +170,9 @@ func TestAProbeThatCouldNotAskNeverNarratesAnEmptyInventory(t *testing.T) {
 			t.Fatalf("a failed probe must not narrate an inventory (%q): %s", forbidden, buf.String())
 		}
 	}
-	if !strings.Contains(text, "could not check") || !strings.Contains(text, "what to do") {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): what to do is said on its own line after an arrow now, not after the words
+	// "what to do:" — the seal is unchanged in what it holds: what happened, and what to do.
+	if !strings.Contains(text, "could not check") || !strings.Contains(text, "\n  → ") {
 		t.Fatalf("it must say what happened AND what to do: %s", buf.String())
 	}
 }

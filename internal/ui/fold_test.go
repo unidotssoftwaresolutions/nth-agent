@@ -1,4 +1,4 @@
-package termwrap_test
+package ui_test
 
 import (
 	"os"
@@ -6,10 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unidotssoftwaresolutions/nth-agent/internal/termwrap"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 )
 
 // ── AN_AGENT_THAT_KNOWS_IT_IS_OLD item 4: connect's narration, wrapped where a person reads it ────────────────────
+//
+// MOVED WITH THE CODE (AN_AGENT_THAT_SPEAKS_PLAINLY): package termwrap's folding became ui.FoldLine, and its writer became
+// ui.Console, which every part of connect now speaks into. These seals are termwrap's, word for word, pointed at the new
+// home; what they hold has not changed.
 //
 // Filmed on 2026-10-20: a long sentence from `connect` broke in the middle of a word, where the terminal ran out of
 // columns. In a terminal each line is now folded at a space to the terminal's width; a command, an address or a path is
@@ -45,7 +49,7 @@ var narration = []struct {
 func wrapped(t *testing.T, width int, text string) string {
 	t.Helper()
 	var out strings.Builder
-	w := &termwrap.Writer{Out: &out, Width: func() int { return width }}
+	w := ui.NewConsole(&out, ui.Mode{Terminal: true, Columns: width})
 	n, err := w.Write([]byte(text))
 	if err != nil || n != len(text) {
 		t.Fatalf("Write took %d of %d bytes: %v", n, len(text), err)
@@ -127,11 +131,12 @@ func TestNothingButATerminalIsFolded(t *testing.T) {
 	for name, w := range map[string]interface{ Write([]byte) (int, error) }{
 		"a file": file, "a pipe": pipe, "the null device": null, "a buffer": &buffer,
 	} {
-		if got := termwrap.For(w); got != w {
-			t.Errorf("%s is not a terminal and must be written as it is, got %T", name, got)
+		// termwrap.For handed such a writer back as it was; ui.For says it is no terminal, so nothing is folded for it.
+		if mode := ui.For(w, ui.Asked{}); mode.Terminal || mode.Stream() != 0 {
+			t.Errorf("%s is not a terminal and must be written as it is, got %+v", name, mode)
 		}
 	}
-	if _, err := termwrap.For(file).Write([]byte(narration[0].line + "\n")); err != nil {
+	if _, err := ui.NewConsole(file, ui.For(file, ui.Asked{})).Write([]byte(narration[0].line + "\n")); err != nil {
 		t.Fatal(err)
 	}
 	logged, _ := os.ReadFile(file.Name())

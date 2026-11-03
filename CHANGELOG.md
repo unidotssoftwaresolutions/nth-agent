@@ -4,6 +4,26 @@ What changed in each release of nth-agent, newest first. Each heading is a versi
 notes are its section here. A command is named here by what you type after the package's name, `capture enable` for
 example: run it through `npx` with that name in front, the way the README shows.
 
+## 0.5.4
+
+- **The agent says what is wrong first, and what to do about it.** `doctor` and `connect` now open with their answer: in
+  green, what is ready, such as how many phones are offered; or, in red, how many things stop runs on this computer. Every
+  problem is said in three parts, in this order: what is wrong, why it matters, and what to do, on a line of its own after
+  `→`, ready to copy.
+- **One look everywhere.** `connect`, `doctor`, `devices` and the command line's own mistakes share one set of marks — `✓`
+  ready, `!` needs a look, `✗` stops a run, `·` detail — and one palette: green, yellow, red, dim. On a terminal that cannot
+  show the marks, they are `ok`, `!!`, `xx`, `--` and `->`.
+- **Colour only on a terminal.** Never into a pipe or a file, and never with `--json`, `--no-color`, `NO_COLOR` or
+  `TERM=dumb`. `--json` prints exactly what it printed before. `--no-color` now works on `devices` and `connect` too.
+- **`devices` is a table:** each phone's name, platform, Android or iOS version, and whether it is ready to offer or left
+  out, and why, in a few words.
+- **`connect` starts with four lines:** its version and whether a newer one is out, the farm it is connected to, what this
+  computer can serve, and how to stop it. On a terminal, connecting and each heartbeat are one line that updates in place;
+  in a log, nothing about them changes.
+- **A system's own error is shown only when asked for.** `connect --verbose` prints it, dim, under the problem it belongs
+  to; by default the line says what happened in a few plain words.
+- **`doctor` says how to install adb for this computer:** `brew` on a Mac, and Google's own download on Linux.
+
 ## 0.5.3
 
 - **Phones on one computer no longer wait for each other.** Until now the agent answered the farm one request at a time

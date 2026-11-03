@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 )
 
 // NINE_GREENS_AND_THE_TWO_THAT_MATTER — the doctor is the most-read surface this agent has and it read like a
@@ -185,11 +187,13 @@ func TestSeal5_AnAdvisoryMissingIsDistinctFromABlockingMissingWithoutColour(t *t
 			}
 		}
 	}
-	// The GUTTER differs…
-	if !strings.HasPrefix(lines[blocker.Name], "!! ") {
+	// The GUTTER differs… AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the marks are the agent's one set now — ✗ stops a run,
+	// ! needs a look — where the doctor had its own (!! and fyi). What this seal holds is unchanged: the two never share
+	// a mark.
+	if !strings.HasPrefix(lines[blocker.Name], "✗ ") {
 		t.Fatalf("a blocker must be marked as one; got %q", lines[blocker.Name])
 	}
-	if !strings.HasPrefix(lines[advisory.Name], "fyi") {
+	if !strings.HasPrefix(lines[advisory.Name], "! ") {
 		t.Fatalf("a check that stops nothing must not wear the blocker's marker; got %q", lines[advisory.Name])
 	}
 	// …and so does the HEADLINE WORD, so the distinction survives even a reader who ignores the margin.
@@ -199,8 +203,10 @@ func TestSeal5_AnAdvisoryMissingIsDistinctFromABlockingMissingWithoutColour(t *t
 	if !strings.Contains(lines[advisory.Name], "missing (does not stop a run)") {
 		t.Fatalf("the advisory says so IN WORDS — the previous slice's decision must not be undone by the renderer; got %q", lines[advisory.Name])
 	}
-	// AND THE COUNT AGREES: only one of them is in the "stops a run" list.
-	if !strings.Contains(text, "One thing stops a run happening on this machine:") {
+	// AND THE COUNT AGREES: only one of them is in the "stops a run" list. AMENDED: the summary now leads the report and
+	// reads "1 thing stops runs on this machine" (AN_AGENT_THAT_SPEAKS_PLAINLY), where it used to close it as "One thing
+	// stops a run happening on this machine:".
+	if !strings.Contains(text, "1 thing stops runs on this machine\n") {
 		t.Fatalf("exactly one of these blocks; got:\n%s", text)
 	}
 }
@@ -215,7 +221,7 @@ func TestSeal6_UnknownRendersAsNeitherFailureNorPass(t *testing.T) {
 	}}
 
 	for _, colour := range []bool{false, true} {
-		text := render(t, r, Options{Color: colour})
+		text := render(t, r, Options{Mode: ui.Mode{Color: colour}})
 		// Found on the STRIPPED text and kept RAW: with colour on, the name is wrapped in escape codes, so
 		// "Appium endpoint:" is not a contiguous substring of the line it appears on.
 		var line string
@@ -224,16 +230,19 @@ func TestSeal6_UnknownRendersAsNeitherFailureNorPass(t *testing.T) {
 				line = l
 			}
 		}
-		if !strings.Contains(stripANSI(line), "?? ") {
+		// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): unknown wears the one mark of what needs a look, !, where the doctor
+		// had ?? of its own. Neither the blocker's ✗ nor the pass's ✓ — that is what this seal holds, and still does; its
+		// own words, below, are what tell it from an advisory.
+		if !strings.HasPrefix(stripANSI(line), "! ") {
 			t.Fatalf("colour=%v: unknown has its own marker, not the blocker's and not the pass's; got %q", colour, line)
 		}
 		if !strings.Contains(stripANSI(line), "could not establish") {
 			t.Fatalf("colour=%v: and its own words; got %q", colour, line)
 		}
-		if colour && !strings.Contains(line, ansiYellow) {
+		if colour && !strings.Contains(line, ui.Mode{Color: true}.Look("!")) {
 			t.Fatalf("with colour on, unknown is yellow — neither the red of a blocker nor the green of a pass; got %q", line)
 		}
-		if colour && (strings.Contains(line, ansiRed) || strings.Contains(line, ansiGreen)) {
+		if colour && (strings.Contains(line, ui.Mode{Color: true}.Stop("✗")) || strings.Contains(line, ui.Mode{Color: true}.Good("✓"))) {
 			t.Fatalf("colour=%v: unknown must not wear failure's or success's colour; got %q", colour, line)
 		}
 		// It is not counted as stopping anything, which is the load-bearing half.
@@ -246,7 +255,7 @@ func TestSeal6_UnknownRendersAsNeitherFailureNorPass(t *testing.T) {
 func TestSeal6_EveryDistinctionSurvivesColourBeingOff(t *testing.T) {
 	// THE RULE: if a difference exists only in colour, it is a bug. Strip the escapes from the coloured render
 	// and it must equal the plain one exactly.
-	coloured := stripANSI(render(t, tonight(), Options{Color: true}))
+	coloured := stripANSI(render(t, tonight(), Options{Mode: ui.Mode{Color: true}}))
 	plain := render(t, tonight(), Options{})
 
 	if coloured != plain {
@@ -257,8 +266,13 @@ func TestSeal6_EveryDistinctionSurvivesColourBeingOff(t *testing.T) {
 // ── seal 7 — no ANSI reaches a non-terminal writer, or any writer under NO_COLOR ─────────────────────────────
 
 func TestSeal7_NoAnsiReachesANonTerminalWriterOrAnyWriterUnderNoColor(t *testing.T) {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the decision moved from doctor.ColorFor to ui.For, which every screen asks.
+	// The rules are the ones this seal held, asked of their new home; ui's own seals hold the rest (TERM=dumb, --json).
+	asked := func(env map[string]string, noColor bool) ui.Asked {
+		return ui.Asked{NoColor: noColor, Env: func(name string) (string, bool) { v, ok := env[name]; return v, ok }}
+	}
 	// A buffer is not a terminal.
-	if ColorFor(&bytes.Buffer{}, false) {
+	if ui.For(&bytes.Buffer{}, asked(nil, false)).Color {
 		t.Fatal("a buffer is not a terminal")
 	}
 	// A pipe is not a terminal either — the case a person hits with `doctor | less` or a CI log.
@@ -268,19 +282,17 @@ func TestSeal7_NoAnsiReachesANonTerminalWriterOrAnyWriterUnderNoColor(t *testing
 	}
 	defer pr.Close()
 	defer pw.Close()
-	if ColorFor(pw, false) {
+	if ui.For(pw, asked(nil, false)).Color {
 		t.Fatal("a pipe is not a terminal: escape sequences in a file are noise a person greps around")
 	}
 	// NO_COLOR by PRESENCE, not value — honouring the value would mean NO_COLOR=0 turns colour ON.
 	for _, value := range []string{"", "0", "false", "1"} {
-		t.Setenv("NO_COLOR", value)
-		if ColorFor(os.Stdout, false) {
+		if ui.For(os.Stdout, asked(map[string]string{"NO_COLOR": value}, false)).Color {
 			t.Fatalf("NO_COLOR=%q is set, so colour is off whatever it says", value)
 		}
 	}
-	os.Unsetenv("NO_COLOR")
 	// …and the flag wins over everything.
-	if ColorFor(os.Stdout, true) {
+	if ui.For(os.Stdout, asked(nil, true)).Color {
 		t.Fatal("--no-color is a person answering this question directly")
 	}
 	// And the renderer itself emits nothing when told not to.
@@ -298,7 +310,8 @@ func TestSeal8_NoCaveatLineCanBeginAtColumnZero(t *testing.T) {
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimLeft(line, " ")
 		switch {
-		case strings.HasPrefix(trimmed, "not established:") || strings.HasPrefix(trimmed, "what to do:"):
+		// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): what to do is the → line now, not a "what to do:" paragraph.
+		case strings.HasPrefix(trimmed, "not established:") || strings.HasPrefix(trimmed, "→ "):
 			inParagraph = true
 		case trimmed == "" || isCheckLine(line):
 			inParagraph = false
@@ -309,14 +322,17 @@ func TestSeal8_NoCaveatLineCanBeginAtColumnZero(t *testing.T) {
 		}
 		// THE LOAD-BEARING CLAIM IS THE INDENT, not the width: what made a 600-character caveat run into the next
 		// check's name was that the terminal folded the overflow at COLUMN 0.
-		if !strings.HasPrefix(line, "      ") {
+		// AMENDED: under its check is the width of the check's mark now (two columns), where the doctor had six.
+		if !strings.HasPrefix(line, "  ") {
 			t.Fatalf("every paragraph line must sit under its check, never at column 0: %q", line)
 		}
 		// COLUMNS, NOT BYTES (this output is full of three-byte em dashes) — and a line may exceed the budget
 		// for exactly one reason: it holds a single token longer than the budget. A path or a URL is a thing a
 		// reader copies, so it overflows alone rather than being broken.
+		// AMENDED: a command is one unit too, as connect's narration always kept it (ui.Fold) — a line holding only the
+		// arrow and one command a person copies may run past the width rather than split it.
 		if width := len([]rune(line)); width > wrapWidth {
-			if fields := strings.Fields(line); len(fields) != 1 {
+			if fields := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "→ ")); len(fields) != 1 && !strings.HasPrefix(fields[0], "npx") {
 				t.Fatalf("a paragraph line is %d columns and holds %d words, so it could have been wrapped: %q",
 					width, len(fields), line)
 			}
@@ -328,7 +344,8 @@ func TestSeal8_NoCaveatLineCanBeginAtColumnZero(t *testing.T) {
 
 // isCheckLine reports whether a line starts a new check — the only lines allowed at column 0 with a gutter.
 func isCheckLine(line string) bool {
-	for _, marker := range []string{"!! ", "?? ", "fyi", "ok ", "n/a"} {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the agent's one set of marks.
+	for _, marker := range []string{"✗ ", "! ", "✓ ", "· "} {
 		if strings.HasPrefix(line, marker) {
 			return true
 		}

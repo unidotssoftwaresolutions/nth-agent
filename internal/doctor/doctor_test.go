@@ -361,7 +361,9 @@ func TestTheSummaryLineAgreesWithItsOwnCount(t *testing.T) {
 	if err := doctor.Human(&one, blocked(1), plainView); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(one.String(), "One thing stops a run happening on this machine:") {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the summary leads the report now, in the words the brief gives it — "1 thing
+	// stops runs on this machine" — and the count still agrees with itself, which is what this seal holds.
+	if !strings.Contains(one.String(), "1 thing stops runs on this machine\n") {
 		t.Fatalf("one blocking check must read as a sentence, got:\n%s", one.String())
 	}
 
@@ -369,7 +371,7 @@ func TestTheSummaryLineAgreesWithItsOwnCount(t *testing.T) {
 	if err := doctor.Human(&two, blocked(2), plainView); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(two.String(), "2 things stop a run happening on this machine:") {
+	if !strings.Contains(two.String(), "2 things stop runs on this machine\n") {
 		t.Fatalf("two blocking checks must read as a sentence, got:\n%s", two.String())
 	}
 

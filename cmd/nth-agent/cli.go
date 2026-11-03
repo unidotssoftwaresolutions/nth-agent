@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/command"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 )
 
 // version is stamped at build time (-ldflags "-X main.version=…"); "dev" for a local build.
@@ -39,7 +42,9 @@ var questions = []string{"--help", "-h", "--version"}
 var verbs = []verbSpec{
 	// --offer-uncabled-devices (inventory.OfferUncabledFlag) is on all three commands that look at this machine's phones,
 	// so devices and doctor can show what connect would offer with it.
-	{Name: "devices", Flags: []flagSpec{{Name: "--json"}, {Name: "--skip", TakesValue: true}, {Name: "--offer-uncabled-devices"}}},
+	// --no-color on every command that prints for a person (AN_AGENT_THAT_SPEAKS_PLAINLY): the agent's one voice is coloured
+	// on a terminal, and a person may always answer that question directly.
+	{Name: "devices", Flags: []flagSpec{{Name: "--json"}, {Name: "--skip", TakesValue: true}, {Name: "--offer-uncabled-devices"}, {Name: "--no-color"}}},
 	// doctor takes --appium so it can probe the endpoint a person WOULD pass to connect; it never guesses one.
 	// It takes --ios-wda-bundle-id for the same reason: the provisioning-profile check asks about the bundle id a
 	// person WOULD sign with, and a diagnostic that guesses one would answer about a phone nobody is running.
@@ -116,6 +121,10 @@ var verbs = []verbSpec{
 		// THE DEVICES TO OFFER, repeatable like --skip: "Google Pixel 9|15.0". The customer names them because
 		// their account offers 110 and they use a handful — a Devices screen of 110 rows is a worse product.
 		{Name: "--browserstack-device", TakesValue: true},
+		// HOW IT IS SAID (AN_AGENT_THAT_SPEAKS_PLAINLY): --no-color as on doctor, and --verbose, which shows under each
+		// problem the error as the system or the server gave it — a Go error is never printed on its own.
+		{Name: "--no-color"},
+		{Name: "--verbose"},
 	}},
 	// capture is NETWORK CAPTURE ON THIS MACHINE, and it is a verb with three words of its own because each is a thing a
 	// person does on purpose, once: turn it on (and type ENABLE), set up a phone (and install a certificate on it by hand),
@@ -173,7 +182,9 @@ func parse(args []string, table []verbSpec, stdout, stderr io.Writer) (*invocati
 		}
 	}
 	if verb == nil {
-		fmt.Fprintf(stderr, "unknown command %q\n\n%s", args[0], usage())
+		refuse(stderr, asksNoColor(args), ui.Problem{What: fmt.Sprintf("unknown command %q", args[0]), Why: nothingRan,
+			Do: "use one of the commands below — " + command.Line("--help") + " shows them again"})
+		fmt.Fprintf(stderr, "\n%s", usage())
 		return nil, exitMistake
 	}
 
@@ -191,21 +202,27 @@ func parse(args []string, table []verbSpec, stdout, stderr io.Writer) (*invocati
 			case sub == nil:
 				sub = verb.subcommand(rest[i])
 				if sub == nil {
-					fmt.Fprintf(stderr, "unknown %s command %q — it is one of: %s\n\n%s", verb.Name, rest[i], verb.subcommandNames(), usage())
+					refuse(stderr, asksNoColor(args), ui.Problem{What: fmt.Sprintf("unknown %s command %q — it is one of: %s", verb.Name, rest[i], verb.subcommandNames()),
+						Why: nothingRan, Do: "use one of them, as in: " + command.Line(verb.Name+" "+verb.Subcommands[0].Name)})
+					fmt.Fprintf(stderr, "\n%s", usage())
 					return nil, exitMistake
 				}
 				inv.Subcommand = sub.Name
 			case sub.Operand != "" && inv.Operand == "":
 				inv.Operand = rest[i]
 			default:
-				fmt.Fprintf(stderr, "%s %s takes nothing more, and was given %q\n\n%s", verb.Name, sub.Name, rest[i], usage())
+				refuse(stderr, asksNoColor(args), ui.Problem{What: fmt.Sprintf("%s %s takes nothing more, and was given %q", verb.Name, sub.Name, rest[i]),
+					Why: nothingRan, Do: fmt.Sprintf("leave %q off: %s", rest[i], command.Line(verb.Name+" "+sub.Name))})
+				fmt.Fprintf(stderr, "\n%s", usage())
 				return nil, exitMistake
 			}
 			continue
 		}
 		spec := verb.flag(rest[i])
 		if spec == nil {
-			fmt.Fprintf(stderr, "unknown option %q\n\n%s", rest[i], usage())
+			refuse(stderr, asksNoColor(args), ui.Problem{What: fmt.Sprintf("unknown option %q", rest[i]), Why: nothingRan,
+				Do: "use an option " + verb.Name + " takes — the usage below lists them"})
+			fmt.Fprintf(stderr, "\n%s", usage())
 			return nil, exitMistake
 		}
 		if !spec.TakesValue {
@@ -216,14 +233,18 @@ func parse(args []string, table []verbSpec, stdout, stderr io.Writer) (*invocati
 		// silently DROPPED before this slice (the first real run would have been told "connect needs the farm URL"
 		// after typing --farm). Name the flag; it is a mistake, not a question.
 		if i+1 >= len(rest) || strings.TrimSpace(rest[i+1]) == "" {
-			fmt.Fprintf(stderr, "%s needs a value\n\n%s", spec.Name, usage())
+			refuse(stderr, asksNoColor(args), ui.Problem{What: spec.Name + " needs a value", Why: nothingRan,
+				Do: "put its value after it, as the usage below shows"})
+			fmt.Fprintf(stderr, "\n%s", usage())
 			return nil, exitMistake
 		}
 		i++
 		inv.Values[spec.Name] = append(inv.Values[spec.Name], rest[i])
 	}
 	if len(verb.Subcommands) > 0 && sub == nil {
-		fmt.Fprintf(stderr, "%s needs one of: %s\n\n%s", verb.Name, verb.subcommandNames(), usage())
+		refuse(stderr, asksNoColor(args), ui.Problem{What: fmt.Sprintf("%s needs one of: %s", verb.Name, verb.subcommandNames()), Why: nothingRan,
+			Do: "add one, as in: " + command.Line(verb.Name+" "+verb.Subcommands[0].Name)})
+		fmt.Fprintf(stderr, "\n%s", usage())
 		return nil, exitMistake
 	}
 	return inv, -1

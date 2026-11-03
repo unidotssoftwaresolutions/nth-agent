@@ -1,6 +1,6 @@
 //go:build darwin || linux
 
-package termwrap
+package ui
 
 import (
 	"os"
@@ -8,9 +8,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// terminalWidth is the width of the terminal f is, now, and whether f is a terminal at all: one that answers the size
+// TerminalWidth is the width of the terminal f is, now, and whether f is a terminal at all: one that answers the size
 // question. A file, a pipe or the null device does not.
-func terminalWidth(f *os.File) (int, bool) {
+func TerminalWidth(f *os.File) (int, bool) {
 	conn, err := f.SyscallConn()
 	if err != nil {
 		return 0, false

@@ -53,7 +53,9 @@ func TestAnUnknownOptionIsAMistakeAnsweredWithExitTwo(t *testing.T) {
 		if code != 2 {
 			t.Fatalf("%q: a mistake must exit 2, got %d", args, code)
 		}
-		if !strings.HasPrefix(errOut, "unknown option \"") || !strings.Contains(errOut, "Usage:") {
+		// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the complaint is said like every problem now — its mark first, then what
+		// is wrong, why it matters and what to do — and the usage still follows it.
+		if !strings.HasPrefix(errOut, "✗ unknown option \"") || !strings.Contains(errOut, "Usage:") {
 			t.Fatalf("%q: the complaint names the option and the usage follows, on stderr; got %q", args, errOut)
 		}
 		if out != "" {
@@ -64,7 +66,8 @@ func TestAnUnknownOptionIsAMistakeAnsweredWithExitTwo(t *testing.T) {
 
 func TestAnUnknownCommandIsNamed(t *testing.T) {
 	code, _, errOut := runParse(t, "conect")
-	if code != 2 || !strings.HasPrefix(errOut, "unknown command \"conect\"") {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): after the mark every problem starts with.
+	if code != 2 || !strings.HasPrefix(errOut, "✗ unknown command \"conect\"") {
 		t.Fatalf("an unknown verb must be named before the usage (it used to print the usage and nothing else), got %d %q", code, errOut)
 	}
 }

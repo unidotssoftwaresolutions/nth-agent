@@ -57,6 +57,13 @@ you what it is.
 flag and the report ends with a count naming it. `--no-color` switches colour off; so does setting
 `NO_COLOR` (its presence, not its value, per no-color.org), and the flag wins over the variable.
 
+The report starts with its answer: in red, how many things stop runs on this machine, each said as what is wrong,
+why it matters, and what to do (after `→`); or, in green, that nothing does. The other checks follow, one line each:
+`✓` ready, `!` needs a look, `·` not needed here. `devices`, `doctor` and `connect` speak the same way. Colour is used
+only on a terminal: never into a pipe or a file, never with `--json`, `--no-color`, `NO_COLOR` or `TERM=dumb`. The marks
+become `ok`, `!!`, `xx`, `--` and `->` on a dumb terminal, or when `LC_ALL`, `LC_CTYPE` or `LANG` (the first one set)
+names a character set other than UTF-8.
+
 ### `setup-ios` — the one-time build
 
 Driving a real iPhone means Appium building and **signing** WebDriverAgent on this machine first, and the
@@ -475,7 +482,8 @@ they name and ask who runs it; one that points adb off this machine's `127.0.0.1
 | `--offer-uncabled-devices` | — | devices, doctor, connect | offer emulators and phones reached over Wi-Fi or the network too; without it only phones on this machine's USB cable are offered |
 | `--appium URL` | `NTH_AGENT_APPIUM` | doctor, connect | the local Appium endpoint, on this machine — probed, or offered for runs; never guessed, and used only when your account runs it |
 | `--why` | — | doctor | print every caveat, including the ones a passing check states |
-| `--no-color` | `NO_COLOR` (presence, not value) | doctor | plain output; the flag wins over the variable |
+| `--no-color` | `NO_COLOR` (presence, not value) | devices, doctor, connect | plain output; the flag wins over the variable |
+| `--verbose` | — | connect | under each problem, the error as the system or the farm gave it, dim |
 | `--ios-team-id TEAM` | `NTH_AGENT_IOS_TEAM_ID` | doctor, setup-ios, connect | your Apple Developer team id — a free Personal Team works |
 | `--ios-wda-bundle-id ID` | `NTH_AGENT_IOS_WDA_BUNDLE_ID` | doctor, setup-ios, connect | the WebDriverAgent bundle id registered to that team |
 | `--ios-signing-id NAME` | `NTH_AGENT_IOS_SIGNING_ID` | setup-ios, connect | the signing identity; unset, **`Apple Development`** |

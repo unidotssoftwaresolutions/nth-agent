@@ -109,6 +109,7 @@ func liveViews(ctx context.Context, env Env, outcomes []inventory.Outcome) []Che
 		if env.MirrorPortFor == nil {
 			c.State = Unknown
 			c.Detail = "this build has no way to check which ports are free here"
+			c.Remedy = "nothing to do before a run: the phone is driven either way — if its live view does not open, watch the phone itself"
 			checks = append(checks, c)
 			continue
 		}
@@ -187,6 +188,19 @@ func UncabledRemedy() string {
 	return "connect it by USB cable, or to offer these too: " + command.Line("connect … "+inventory.OfferUncabledFlag)
 }
 
+// AdbInstallRemedy is how to install adb, in the words of the system it is said on: brew on a Mac, Google's own download on
+// Linux, which every distribution can use. A system it cannot name gets both.
+func AdbInstallRemedy(system string) string {
+	const linux = "download Android platform-tools from https://developer.android.com/tools/releases/platform-tools, unpack it and put that folder on PATH"
+	switch system {
+	case "darwin":
+		return "brew install --cask android-platform-tools"
+	case "linux":
+		return linux
+	}
+	return "install Android platform-tools and put adb on PATH (on a Mac: brew install --cask android-platform-tools; on Linux: " + linux + ")"
+}
+
 // NoAppiumRemedy is the remedy when no Appium endpoint was given.
 func NoAppiumRemedy() string {
 	return "start Appium and pass its URL: " + command.Line("connect --appium http://127.0.0.1:4723") + " — this command does not guess where it might be"
@@ -255,7 +269,7 @@ func adbBinary(ctx context.Context, env Env) Check {
 	if err != nil {
 		c.State = Missing
 		c.Detail = "not on PATH"
-		c.Remedy = "install Android platform-tools and put adb on PATH (macOS: brew install --cask android-platform-tools)"
+		c.Remedy = AdbInstallRemedy(env.System)
 		return c
 	}
 	c.State = Satisfied
@@ -596,6 +610,7 @@ func iosProvisioningProfile(ctx context.Context, env Env, outcomes []inventory.O
 	if env.IosProfiles == nil {
 		c.State = Unknown
 		c.Detail = "this build has no way to read the profiles on this machine"
+		c.Remedy = "check them by hand: ls ~/Library/Developer/Xcode/UserData/Provisioning\\ Profiles/"
 		return c
 	}
 	profiles, err := env.IosProfiles(ctx)
@@ -831,6 +846,7 @@ func iosWdaProjectTargets(ctx context.Context, env Env, outcomes []inventory.Out
 		if err != nil {
 			c.State = Unknown
 			c.Detail = fmt.Sprintf("could not read %s's build settings: %s", target, firstLine(out))
+			c.Remedy = "run '" + command.Line("setup-ios") + "', which builds with the team you declare whatever the project stores"
 			return c
 		}
 		team := settingValue(out, "DEVELOPMENT_TEAM")
@@ -924,6 +940,7 @@ func iosWdaPort(ctx context.Context, env Env, outcomes []inventory.Outcome) Chec
 	if env.IosLocalPortStatus == nil {
 		c.State = Unknown
 		c.Detail = "this build has no way to ask what is listening here"
+		c.Remedy = "check by hand what holds each port: lsof -nP -iTCP -sTCP:LISTEN"
 		return c
 	}
 
@@ -950,6 +967,7 @@ func iosWdaPort(ctx context.Context, env Env, outcomes []inventory.Outcome) Chec
 	case checked == 0:
 		c.State = Unknown
 		c.Detail = "no iPhone was offered, so there was no port to check"
+		c.Remedy = "re-run this command once an iPhone here is offered: " + command.Line("doctor")
 	case len(taken) > 0:
 		c.State = Missing
 		c.Detail = "something on this machine already holds port " + strings.Join(taken, ", ") + " and it is not WebDriverAgent"
@@ -1014,6 +1032,7 @@ func iosSigningIdentity(ctx context.Context, env Env, outcomes []inventory.Outco
 	if env.IosIdentities == nil {
 		c.State = Unknown
 		c.Detail = "this build has no way to read this machine's signing identities"
+		c.Remedy = "check by hand: security find-identity -v -p codesigning"
 		return c
 	}
 	identities, err := env.IosIdentities(ctx)

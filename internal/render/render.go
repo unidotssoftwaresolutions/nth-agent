@@ -10,6 +10,7 @@ import (
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/liveview"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 )
 
 // LiveViewFor answers ONE usable phone's live view on this machine (liveview.Judge, in the command). nil = the caller
@@ -106,54 +107,117 @@ func JSON(w io.Writer, outcomes []inventory.Outcome, liveView LiveViewFor) error
 	return encoder.Encode(payload)
 }
 
-// Human writes the reader's rendering. A probe that could not ask NEVER prints "no devices found":
-// it prints what happened and what to do. An attached-but-unusable device is printed with its reason, and a usable
-// one with its live view — one line each — when the caller established it.
+// Human writes the reader's rendering, plain: no colour, folded at ui.ReportWidth. Styled is the same with the dressing
+// the caller decided.
 func Human(w io.Writer, outcomes []inventory.Outcome, liveView LiveViewFor) error {
+	return Styled(w, ui.Mode{}, outcomes, liveView)
+}
+
+// Styled writes the reader's rendering (AN_AGENT_THAT_SPEAKS_PLAINLY): what each platform answered, first, a line each;
+// then every phone in a small table — name, platform, OS and state, the state in its colour; then each phone's live view;
+// then every problem in the three parts every problem is said in.
+//
+// A probe that could not ask NEVER prints "no devices found": it prints what happened and what to do. An attached-but-
+// unusable device is a row with its state and a problem with its remedy; a usable one carries its live view when the
+// caller established it.
+func Styled(w io.Writer, m ui.Mode, outcomes []inventory.Outcome, liveView LiveViewFor) error {
+	width := m.Report()
 	var b strings.Builder
+	say := func(lines ...string) {
+		for _, line := range lines {
+			b.WriteString(line + "\n")
+		}
+	}
+	var rows [][]ui.Cell
+	var views, problems []string
 	for _, o := range outcomes {
-		platform := strings.ToUpper(string(o.Platform()))
+		platform := PlatformName(o.Platform())
 		switch {
 		case o.IsNotAsked():
-			fmt.Fprintf(&b, "%s: not checked on this host (the probe is switched off — this is not a report about your devices).\n", platform)
+			say(m.Marked(ui.MarkNote, platform+": not checked on this host (the probe is switched off — this is not a report about your devices).", m.Dim, width)...)
 		case o.IsCouldNotAsk():
-			fmt.Fprintf(&b, "%s: COULD NOT CHECK — %s\n", platform, o.Reason())
-			fmt.Fprintf(&b, "    what to do: %s\n", o.Remedy())
+			problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelStop, What: platform + ": could not check — " + o.Reason(),
+				Why: "No " + platform + " phone on this machine can be listed or offered until this is fixed.", Do: o.Remedy()}, width, false)...)
+			say(m.Marked(ui.MarkStop, platform+": could not check", m.Stop, width)...)
+		case len(o.Offerable()) == 0 && len(o.Unusable()) == 0 && len(o.LeftOut()) == 0:
+			say(m.Marked(ui.MarkNote, platform+": no devices attached (checked — this is an answer, not a failure).", m.Dim, width)...)
 		default:
-			if len(o.Offerable()) == 0 && len(o.Unusable()) == 0 && len(o.LeftOut()) == 0 {
-				fmt.Fprintf(&b, "%s: no devices attached (checked — this is an answer, not a failure).\n", platform)
-				continue
+			mark := ui.MarkOK
+			if len(o.Offerable()) == 0 {
+				mark = ui.MarkLook
 			}
-			fmt.Fprintf(&b, "%s: %d usable, %d attached but unusable.\n", platform, len(o.Offerable()), len(o.Unusable()))
+			say(m.Marked(mark, fmt.Sprintf("%s: %d usable, %d attached but unusable", platform, len(o.Offerable()), len(o.Unusable())), nil, width)...)
 			for _, d := range o.Offerable() {
-				label := d.Model
-				if label == "" {
-					label = "(model unknown)"
-				}
-				fmt.Fprintf(&b, "    usable   %s  %s\n", d.ID, label)
+				rows = append(rows, []ui.Cell{{Text: deviceName(d.Model, d.ID)}, {Text: platform}, {Text: orDash(d.OsVersion)}, {Text: "ready to offer", Paint: m.Good}})
 				if liveView != nil {
-					fmt.Fprintf(&b, "             live view: %s\n", liveView(o.Platform(), d.ID).Line())
+					views = append(views, deviceName(d.Model, d.ID))
+					views = append(views, m.Indented("  ", "live view: "+liveView(o.Platform(), d.ID).Line(), m.Dim, width)...)
 				}
 			}
 			for _, u := range o.Unusable() {
-				fmt.Fprintf(&b, "    UNUSABLE %s  [%s] — %s\n", u.ID, u.State, u.Remedy)
+				rows = append(rows, []ui.Cell{{Text: deviceName("", u.ID)}, {Text: platform}, {Text: "—"}, {Text: "left out: " + u.State, Paint: m.Stop}})
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelStop, What: fmt.Sprintf("%s phone %s is %s", platform, u.ID, u.State),
+					Why: "It is not offered for runs until you do this.", Do: u.Remedy}, width, false)...)
 			}
 			// NOT ON THE CABLE (A_MACHINE_THAT_STAYS_THE_CUSTOMERS, decision 1): seen, ready, and not offered.
 			for _, d := range o.LeftOut() {
-				fmt.Fprintf(&b, "    LEFT OUT %s  — %s; the agent offers only phones on a USB cable (%s offers it too)\n",
-					d.ID, d.How, inventory.OfferUncabledFlag)
+				rows = append(rows, []ui.Cell{{Text: deviceName("", d.ID)}, {Text: platform}, {Text: "—"}, {Text: "left out: not on a USB cable", Paint: m.Look}})
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s phone %s is %s", platform, d.ID, d.How),
+					Why: "The agent offers only phones on a USB cable, so this one is left out.",
+					Do:  "connect it by USB cable, or offer it too: start connect with " + inventory.OfferUncabledFlag}, width, false)...)
 			}
-			// The platform ANSWERED and still has something it could not establish. Worded as a note, never as
-			// a failure: a reader must be able to tell "I could not check" from "I checked, and here is what my
-			// answer does not cover".
+			// The platform ANSWERED and still has something it could not establish. Worded as a note, never as a failure: a
+			// reader must be able to tell "I could not check" from "I checked, and here is what my answer does not cover".
 			if o.HasCaveat() {
-				fmt.Fprintf(&b, "    NOTE (this answer does not cover): %s\n", o.Reason())
-				fmt.Fprintf(&b, "    what to check by hand: %s\n", o.Remedy())
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: platform + ": this answer does not cover: " + o.Reason(),
+					Why: "The phones above are listed; this is what the listing could not tell.", Do: "check by hand: " + o.Remedy()}, width, false)...)
 			}
 		}
 	}
+	if len(rows) > 0 {
+		say("")
+		say(m.Table("", []string{"NAME", "PLATFORM", "OS", "STATE"}, rows)...)
+	}
+	if len(views) > 0 {
+		say("")
+		say(views...)
+	}
+	if len(problems) > 0 {
+		say("")
+		say(problems...)
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// PlatformName is a platform as a person writes it: Android, iOS.
+func PlatformName(p inventory.Platform) string {
+	switch p {
+	case inventory.Android:
+		return "Android"
+	case inventory.IOS:
+		return "iOS"
+	}
+	return string(p)
+}
+
+// deviceName is what a person calls a phone: its model, or, with none, its id — the ends of a long one, which is enough to
+// tell two phones apart on one desk (the whole id is in every problem line about it, and in --json).
+func deviceName(model, id string) string {
+	if model != "" {
+		return model
+	}
+	if len(id) > 16 {
+		return id[:8] + "…" + id[len(id)-4:]
+	}
+	return id
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }
 
 // ExitCode: 0 means "I established the truth", not "I finished running". Answered-with-zero-devices is

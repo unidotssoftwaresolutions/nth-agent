@@ -1,0 +1,37 @@
+1 thing stops runs on this machine
+✗ iOS provisioning profile: MISSING — no profile on this machine covers
+  com.qanguru.WebDriverAgentRunner.xctrunner for team TEAM7QZ4X2
+  Without one, WebDriverAgent cannot be signed, so no run on this machine's
+  iPhones can start.
+  → run 'nth-agent setup-ios', or open
+    ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/WebDriverAgent.xcodeproj
+    in Xcode and set your team
+  not established: reading a profile off this disk is not running the build: it
+  does not establish that Xcode can reach Apple, and it CANNOT say whether the
+  developer certificate is trusted on the phone — iOS exposes no such query
+  (go-ios v1.3.2 has none, and its misagent profile copy errors), so the first
+  session on a phone may still ask you on the device. A development profile also
+  LISTS THE DEVICES it covers, and this check reads that list: a udid missing
+  from every matching profile fails the build by name before the phone is
+  touched.
+
+The other checks
+! Appium endpoint: could not establish — no endpoint was given (--appium or
+  NTH_AGENT_APPIUM)
+  The agent could not tell whether this stops a run here.
+  → start Appium and pass its URL
+! iOS WebDriverAgent project: missing (does not stop a run) — WebDriverAgentLib
+  is on team TEAM7QZ4X2 — this does not stop a run here
+  Both builds that run here pass your team themselves, which overrides what the
+  project stores.
+  → run 'nth-agent setup-ios'
+✓ adb: ready — Android Debug Bridge version 1.0.41
+✓ iOS Developer Mode: ready — on for 2 attached device(s)
+✓ iOS WebDriverAgent port: ready — the derived port is available
+· iOS signing identity: not needed on this machine — no iOS device was seen on
+  this machine
+
+2 checks that do not stop a run state what they did NOT establish — run
+`npx nthcase-agent@latest doctor --why` to read them.
+
+We do not install anything on your machine. This command reports; you decide.

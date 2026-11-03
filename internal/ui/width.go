@@ -1,88 +1,79 @@
-// Package termwrap folds what connect says to the width of the terminal it says it in (AN_AGENT_THAT_KNOWS_IT_IS_OLD item 4).
-//
-// A terminal folds a line that is too long for it wherever its columns run out, which is usually in the middle of a word.
-// So in a terminal each line is folded here first, at a space, to the terminal's width as it is at that moment; the lines
-// after the first are indented two spaces deeper than the line they continue. A command, an address or a path is never
-// split: a person copies those whole.
-//
-// ANYTHING THAT IS NOT A TERMINAL IS NOT FOLDED. In a file, a pipe or a CI log every line stays whole, so it can be found
-// with grep and read by a program the way it was written.
-package termwrap
+package ui
 
-import (
-	"io"
-	"os"
-	"strings"
+import "strings"
+
+// THE WIDTH RULES — one set, for every screen.
+//
+//   - ON A TERMINAL a line is folded to the terminal's width, and never wider than Measure: past about a hundred columns
+//     the eye loses its place going back to the start of the next line, so a 160-column terminal reads the same sentences
+//     at 100.
+//   - OFF A TERMINAL a report (doctor, devices), read once and whole, is folded at ReportWidth, the width terminals
+//     essentially do not go below — the output a person pastes is then the output anyone else renders. A stream
+//     (connect's narration) is never folded off a terminal: in a file, a pipe or a CI log every line stays whole, so it can
+//     be found with grep and read by a program the way it was written.
+//   - NOTHING A PERSON COPIES IS EVER SPLIT: a word, a span in backticks, a command with its flags and values, an address,
+//     a path. One that is longer than the line overflows its line, alone.
+//   - A folded line's continuation sits under the text it continues, never at column 0, where it would read as the start
+//     of something new.
+//   - However deep the indent or narrow the terminal, a line keeps MinColumns for its words.
+const (
+	Measure     = 100
+	ReportWidth = 80
+	MinColumns  = 20
 )
 
-// For is w folded to its terminal's width when w is a terminal, and w itself when it is anything else.
-func For(w io.Writer) io.Writer {
-	f, ok := w.(*os.File)
-	if !ok {
-		return w
+// Stream is the width connect's narration folds to: the terminal's, up to Measure; 0 (nothing folded) off a terminal.
+func (m Mode) Stream() int {
+	if !m.Terminal || m.Columns <= 0 {
+		return 0
 	}
-	if _, isTerminal := terminalWidth(f); !isTerminal {
-		return w
-	}
-	return &Writer{Out: w, Width: func() int {
-		width, _ := terminalWidth(f)
-		return width
-	}}
+	return min(m.Columns, Measure)
 }
 
-// Writer folds each line written to it to Width() columns before it passes it on. A width of zero or less folds nothing.
-//
-// Every write is folded on its own: connect writes a whole line, or a few, at a time, from more than one goroutine, so
-// nothing is held back for a later write to finish.
-type Writer struct {
-	Out   io.Writer
-	Width func() int
+// Report is the width a report folds to: the terminal's, up to Measure; ReportWidth off a terminal.
+func (m Mode) Report() int {
+	if !m.Terminal || m.Columns <= 0 {
+		return ReportWidth
+	}
+	return min(m.Columns, Measure)
 }
 
-// minimumColumns is the least a line is given, however deep its indent or narrow the terminal: below it a sentence would
-// become one word per line.
-const minimumColumns = 20
-
-func (w *Writer) Write(p []byte) (int, error) {
-	width := w.Width()
+// Fold is text folded to width columns at its spaces. The first line starts with first, every line after it with rest. A
+// width of 0 or less folds nothing: the one line comes back whole. The indents may hold escape codes; only what shows on
+// a screen is counted.
+func Fold(text, first, rest string, width int) []string {
+	text = strings.TrimSpace(text)
 	if width <= 0 {
-		return w.Out.Write(p)
+		return []string{first + text}
 	}
-	lines := strings.Split(string(p), "\n")
-	for i, line := range lines {
-		lines[i] = fold(line, width)
-	}
-	if _, err := io.WriteString(w.Out, strings.Join(lines, "\n")); err != nil {
-		return 0, err
-	}
-	return len(p), nil
-}
-
-// fold is one line folded to width columns at its spaces, keeping each unit (see units) on one line.
-func fold(line string, width int) string {
-	if len([]rune(line)) <= width {
-		return line
-	}
-	indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
-	pieces := units(strings.TrimLeft(line, " "))
+	pieces := units(text)
 	if len(pieces) == 0 {
-		return line
+		return []string{strings.TrimRight(first, " ")}
 	}
-	limit := func(indent string) int { return max(width, len([]rune(indent))+minimumColumns) }
-	next := indent + "  "
-	var b strings.Builder
-	b.WriteString(indent + pieces[0].text)
-	used, room := len([]rune(indent+pieces[0].text)), limit(indent)
+	room := func(indent string) int { return max(width, Columns(indent)+MinColumns) }
+	var lines []string
+	line, used, limit := first+pieces[0].text, Columns(first+pieces[0].text), room(first)
 	for _, u := range pieces[1:] {
-		if used+len([]rune(u.gap+u.text)) > room {
-			b.WriteString("\n" + next + u.text)
-			used, room = len([]rune(next+u.text)), limit(next)
+		if used+Columns(u.gap+u.text) > limit {
+			lines = append(lines, line)
+			line, used, limit = rest+u.text, Columns(rest+u.text), room(rest)
 			continue
 		}
-		b.WriteString(u.gap + u.text)
-		used += len([]rune(u.gap + u.text))
+		line += u.gap + u.text
+		used += Columns(u.gap + u.text)
 	}
-	return b.String()
+	return append(lines, line)
+}
+
+// FoldLine is one line folded as a terminal would want it: its own leading spaces kept, and each continuation two columns
+// deeper than the line it continues.
+func FoldLine(line string, width int) string {
+	if width <= 0 || Columns(line) <= width {
+		return line
+	}
+	text := strings.TrimLeft(line, " ")
+	indent := line[:len(line)-len(text)]
+	return strings.Join(Fold(text, indent, indent+"  ", width), "\n")
 }
 
 // unit is a run of words a line may not be folded inside, and the spaces that came before it.
@@ -124,7 +115,7 @@ func units(text string) []unit {
 
 // wholeFrom is how many words, from words[i], may not be folded apart.
 func wholeFrom(words []string, i int) int {
-	word := words[i]
+	word := Plain(words[i])
 	switch {
 	case strings.HasPrefix(word, "`") && strings.Count(word, "`") == 1:
 		for j := i + 1; j < len(words); j++ {
@@ -132,16 +123,16 @@ func wholeFrom(words []string, i int) int {
 				return j - i + 1
 			}
 		}
-	case word == "npx" || word == "npm":
+	case word == "npx" || word == "npm" || word == "brew":
 		return command(words, i, 3)
-	case word == "adb" && i+1 < len(words) && (strings.HasPrefix(words[i+1], "-") || adbVerbs[words[i+1]]):
+	case word == "adb" && i+1 < len(words) && (strings.HasPrefix(words[i+1], "-") || adbVerbs[Plain(words[i+1])]):
 		// adb's own words read like prose (shell settings put global …), so its command runs to the end of the clause.
 		n := 1
 		for n < len(words)-i && !endsClause(words[i+n-1]) {
 			n++
 		}
 		return n
-	case strings.HasPrefix(word, "--") && i+1 < len(words) && (placeholder(words[i+1]) || strings.Contains(words[i+1], "://")):
+	case strings.HasPrefix(word, "--") && i+1 < len(words) && (placeholder(Plain(words[i+1])) || strings.Contains(words[i+1], "://")):
 		return 2
 	}
 	return 1
@@ -154,7 +145,7 @@ var adbVerbs = map[string]bool{"shell": true, "reverse": true, "forward": true, 
 func command(words []string, i, head int) int {
 	n := 1
 	for i+n < len(words) && !endsClause(words[i+n-1]) {
-		word, before := words[i+n], words[i+n-1]
+		word, before := Plain(words[i+n]), Plain(words[i+n-1])
 		if n >= head && !partOfACommand(word, before) {
 			break
 		}
@@ -198,6 +189,7 @@ func placeholder(word string) bool {
 
 // endsClause is a word the sentence pauses after: a command it ends stops there.
 func endsClause(word string) bool {
+	word = Plain(word)
 	return strings.HasSuffix(word, ",") || strings.HasSuffix(word, ";") || strings.HasSuffix(word, ")") ||
 		(strings.HasSuffix(word, ".") && !strings.HasSuffix(word, "..."))
 }

@@ -35,7 +35,9 @@ func TestACaveatPrintsAsANoteAndNotAsAFailure(t *testing.T) {
 	if !strings.Contains(text, "this answer does not cover") || !strings.Contains(text, "somebody at the device") {
 		t.Fatalf("the blind spot must be shown to the reader:\n%s", text)
 	}
-	if !strings.Contains(text, "what to check by hand") {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the remedy is the → line of the note, said as "check by hand: …" where it
+	// was "what to check by hand: …".
+	if !strings.Contains(text, "→ check by hand: approve one installation by hand") {
 		t.Fatalf("a caveat without its remedy is half a sentence:\n%s", text)
 	}
 }

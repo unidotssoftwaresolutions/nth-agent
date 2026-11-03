@@ -61,10 +61,14 @@ func TestARegister404SaysTheOneCauseAndKeepsTheAgentsOwnSteps(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "identity refused") {
 		t.Fatalf("a registration refused with a 404 must stop the loop as an identity refused, got %v", err)
 	}
-	want := "the farm refused this node's identity: this id is already registered at the farm, but not to the workspace of " +
-		"this agent's token. First stop every npx nthcase-agent connect running on this machine; then remove the node-id " +
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the line became the three parts every problem is said in — what is wrong,
+	// under the summary that it stops runs, then why it matters, then the agent's own steps on the → line, which still ends
+	// the transcript. The words are the ones this seal held, cut where the problem's parts meet.
+	what := "1 thing stops runs on this machine\n✗ the farm refused this node's identity: this id is already registered at the farm, but not to the workspace of " +
+		"this agent's token.\n"
+	want := "  → First stop every npx nthcase-agent connect running on this machine; then remove the node-id " +
 		"file in the agent's config folder to mint a fresh identity, or contact your operator.\n"
-	if !strings.HasSuffix(out.String(), want) || strings.Count(out.String(), "refused this node's identity") != 1 {
+	if !strings.Contains(out.String(), what) || !strings.HasSuffix(out.String(), want) || strings.Count(out.String(), "refused this node's identity") != 1 {
 		t.Fatalf("the register 404's line:\n got %q\nwant it to end %q", out.String(), want)
 	}
 	if strings.Contains(out.String(), "Re-register") || strings.Contains(out.String(), " may ") {

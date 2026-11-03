@@ -1,0 +1,27 @@
+✓ Android: 2 usable, 1 attached but unusable
+✗ iOS: could not check
+
+NAME           PLATFORM  OS  STATE
+SM-A546B       Android   14  ready to offer
+Pixel 8        Android   15  ready to offer
+R5CT32ABCDE    Android   —   left out: unauthorized
+emulator-5554  Android   —   left out: not on a USB cable
+
+SM-A546B
+  live view: yes — its mirror is 127.0.0.1:35118, reserved on this machine for
+  this phone
+Pixel 8
+  live view: no — no mirror port was free on this machine (what to do: free
+  31002 (lsof -nP -iTCP:31002 -sTCP:LISTEN names what holds it), then restart
+  the agent)
+
+✗ Android phone R5CT32ABCDE is unauthorized
+  It is not offered for runs until you do this.
+  → Tap Allow on the phone's USB debugging prompt, then re-run.
+! Android phone emulator-5554 is an emulator
+  The agent offers only phones on a USB cable, so this one is left out.
+  → connect it by USB cable, or offer it too: start connect with
+    --offer-uncabled-devices
+✗ iOS: could not check — usbmuxd did not answer within 20s
+  No iOS phone on this machine can be listed or offered until this is fixed.
+  → unplug the iPhone and plug it back in, then re-run

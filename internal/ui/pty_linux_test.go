@@ -1,4 +1,4 @@
-package termwrap_test
+package ui_test
 
 import (
 	"fmt"

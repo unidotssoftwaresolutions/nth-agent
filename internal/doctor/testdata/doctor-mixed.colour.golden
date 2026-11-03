@@ -1,0 +1,31 @@
+\x1b[1m\x1b[31m1 thing stops runs on this machine\x1b[0m
+\x1b[31m✗\x1b[0m \x1b[31miOS provisioning profile: MISSING — no profile on this machine covers\x1b[0m
+  \x1b[31mcom.qanguru.WebDriverAgentRunner.xctrunner for team TEAM7QZ4X2\x1b[0m
+  \x1b[2mWithout one, WebDriverAgent cannot be signed, so no run on this machine's iPhones can start.\x1b[0m
+  \x1b[1m→\x1b[0m run 'nth-agent setup-ios', or open
+    ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/WebDriverAgent.xcodeproj
+    in Xcode and set your team
+  \x1b[2mnot established: reading a profile off this disk is not running the build: it does not establish\x1b[0m
+  \x1b[2mthat Xcode can reach Apple, and it CANNOT say whether the developer certificate is trusted on the\x1b[0m
+  \x1b[2mphone — iOS exposes no such query (go-ios v1.3.2 has none, and its misagent profile copy errors),\x1b[0m
+  \x1b[2mso the first session on a phone may still ask you on the device. A development profile also LISTS\x1b[0m
+  \x1b[2mTHE DEVICES it covers, and this check reads that list: a udid missing from every matching profile\x1b[0m
+  \x1b[2mfails the build by name before the phone is touched.\x1b[0m
+
+\x1b[2mThe other checks\x1b[0m
+\x1b[33m!\x1b[0m \x1b[33mAppium endpoint: could not establish — no endpoint was given (--appium or NTH_AGENT_APPIUM)\x1b[0m
+  \x1b[2mThe agent could not tell whether this stops a run here.\x1b[0m
+  \x1b[1m→\x1b[0m start Appium and pass its URL
+\x1b[33m!\x1b[0m \x1b[33miOS WebDriverAgent project: missing (does not stop a run) — WebDriverAgentLib is on team\x1b[0m
+  \x1b[33mTEAM7QZ4X2 — this does not stop a run here\x1b[0m
+  \x1b[2mBoth builds that run here pass your team themselves, which overrides what the project stores.\x1b[0m
+  \x1b[1m→\x1b[0m run 'nth-agent setup-ios'
+\x1b[32m✓\x1b[0m adb: ready — Android Debug Bridge version 1.0.41
+\x1b[32m✓\x1b[0m iOS Developer Mode: ready — on for 2 attached device(s)
+\x1b[32m✓\x1b[0m iOS WebDriverAgent port: ready — the derived port is available
+\x1b[2m·\x1b[0m \x1b[2miOS signing identity: not needed on this machine — no iOS device was seen on this machine\x1b[0m
+
+2 checks that do not stop a run state what they did NOT establish — run
+`npx nthcase-agent@latest doctor --why` to read them.
+
+\x1b[2mWe do not install anything on your machine. This command reports; you decide.\x1b[0m

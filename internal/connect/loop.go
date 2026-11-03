@@ -16,6 +16,7 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/liveview"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/localconn"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/wda"
 )
 
@@ -120,6 +121,10 @@ type Config struct {
 	// Install is how this agent was started (HowStarted), which decides how a newer release is said to be installed, and how
 	// every command connect prints is spelled (NTH_AGENT_0_4_3). The zero value is "cannot tell": the npx form with @latest.
 	Install Install
+	// Console is the output everything this loop says goes to, dressed by internal/ui (AN_AGENT_THAT_SPEAKS_PLAINLY): main
+	// shares one with the drive tunnel and capture, so their lines never cut into each other or into the updating line.
+	// nil = a plain console over Out, which is what a test or a pipe gets.
+	Console *ui.Console
 }
 
 // CaptureDeclaration answers the machine's capture declaration — farm.CaptureDisabled, CaptureAvailable or
@@ -205,8 +210,13 @@ const DefaultHintAfter = 10 * time.Minute
 // Run executes the loop. It returns nil on context end or MaxTicks, and an error only for the
 // terminal cases (transport unsafe; auth refused; registration impossible).
 func Run(ctx context.Context, cfg Config) error {
-	// EVERYTHING THIS LOOP SAYS goes through the agent's terminal filter (A_FARM_THE_AGENT_DOES_NOT_TAKE_ON_TRUST).
-	narrator := &narrator{out: farm.TerminalWriter(cfg.Out), hintAfter: cfg.HintAfter, now: cfg.Now, install: cfg.Install}
+	// EVERYTHING THIS LOOP SAYS goes through the agent's terminal filter (A_FARM_THE_AGENT_DOES_NOT_TAKE_ON_TRUST) — line by
+	// line, before the agent's own dressing is put on (clean) — and then through the agent's one voice (internal/ui).
+	console := cfg.Console
+	if console == nil {
+		console = ui.NewConsole(cfg.Out, ui.Mode{})
+	}
+	narrator := &narrator{out: console, hintAfter: cfg.HintAfter, now: cfg.Now, install: cfg.Install, cloud: len(cfg.CloudDevices)}
 	if narrator.now == nil {
 		narrator.now = time.Now
 	}
@@ -214,7 +224,7 @@ func Run(ctx context.Context, cfg Config) error {
 		narrator.hintAfter = DefaultHintAfter
 	}
 
-	narrator.say("connecting to %s", cfg.Client.BaseURL)
+	narrator.progress(ui.MarkNote, "connecting to %s", cfg.Client.BaseURL)
 
 	declared := captureDeclared(cfg)
 	if err := registerWithBackoff(ctx, cfg, narrator); err != nil {
@@ -262,6 +272,7 @@ func Run(ctx context.Context, cfg Config) error {
 			narrator.narrateWork(answer.HeartbeatWork)
 			narrator.newerRelease(cfg.AgentVersion, answer.NewerAgentVersion, cfg.Install)
 			narrator.recovered("heartbeat")
+			narrator.heartbeat()
 		case farm.CallUnauthorized:
 			// TERMINAL. A refused token does not heal by retrying; hammering an auth failure is how a customer's
 			// laptop becomes our incident. What is SAID about it is narrator.refused's — the same words as at
@@ -279,9 +290,9 @@ func Run(ctx context.Context, cfg Config) error {
 			// is safe because the caller owns the once-ness: main's closure is wrapped in a sync.Once, so a
 			// second call starts no second tunnel. See Config.OnRegistered.
 			if _, reason, _ := farm.WhatTheFarmSaid(err); reason != "" {
-				narrator.say("the farm did not apply this heartbeat (404). It says: “%s” — re-registering with the same identity", reason)
+				narrator.progress(ui.MarkLook, "the farm did not apply this heartbeat (404). It says: “%s” — re-registering with the same identity", reason)
 			} else {
-				narrator.say("the farm forgot this node (it may have been purged) — re-registering with the same identity")
+				narrator.progress(ui.MarkLook, "the farm forgot this node (it may have been purged) — re-registering with the same identity")
 			}
 			if err := registerWithBackoff(ctx, cfg, narrator); err != nil {
 				return err
@@ -308,7 +319,7 @@ func Run(ctx context.Context, cfg Config) error {
 			backoffSleep(ctx, cfg, narrator, cfg.Interval)
 			continue
 		case farm.CallUnsafeTransport:
-			narrator.say("%v", err)
+			narrator.unsafeTransport(err)
 			return fmt.Errorf("unsafe transport: %w", err)
 		case farm.CallTransport:
 			narrator.transportOrAnswer("heartbeat", err, "retrying with backoff")
@@ -487,24 +498,31 @@ func assembleReport(ctx context.Context, cfg Config, narrator *narrator, outcome
 		var elsewhere *localconn.NotOnThisMachine
 		switch {
 		case errors.As(err, &notOurs):
-			narrator.driverDown(fmt.Sprintf("the Appium endpoint at %s was not used: %s", cfg.Driver.AppiumURL, notOurs),
-				"start Appium yourself, as this account, on that port — the agent sends runs only to an Appium you run")
+			narrator.driverDown(ui.Problem{What: fmt.Sprintf("the Appium endpoint at %s was not used: %s", cfg.Driver.AppiumURL, notOurs),
+				Do: "start Appium yourself, as this account, on that port — the agent sends runs only to an Appium you run"})
 			return withCloud(report)
 		case errors.As(err, &elsewhere):
-			narrator.driverDown(fmt.Sprintf("the Appium endpoint at %s was not used: %s", cfg.Driver.AppiumURL, elsewhere),
-				AppiumNotHereRemedy(cfg.Install))
+			narrator.driverDown(ui.Problem{What: fmt.Sprintf("the Appium endpoint at %s was not used: %s", cfg.Driver.AppiumURL, elsewhere),
+				Do: AppiumNotHereRemedy(cfg.Install)})
 			return withCloud(report)
 		}
-		narrator.driverDown(fmt.Sprintf("the Appium endpoint at %s is not answering (%v)", cfg.Driver.AppiumURL, err),
-			"start Appium there, then the devices are offered automatically — `"+cfg.Install.Line("doctor")+"` reports what this machine has. A local Appium is a prerequisite and stays one: we do not install software on a machine we do not own")
+		// THE GO ERROR IS NOT THE SENTENCE (AN_AGENT_THAT_SPEAKS_PLAINLY): the line says, in a few words, what the dial found,
+		// and the error itself is shown under --verbose.
+		what := fmt.Sprintf("the Appium endpoint at %s is not answering", cfg.Driver.AppiumURL)
+		if cause := plainCause(err); cause != "" {
+			what += " (" + cause + ")"
+		}
+		narrator.driverDown(ui.Problem{What: what,
+			Do:  "start Appium there, then the devices are offered automatically — `" + cfg.Install.Line("doctor") + "` reports what this machine has. A local Appium is a prerequisite and stays one: we do not install software on a machine we do not own",
+			Raw: farm.OneLineForTerminal(err.Error())})
 		return withCloud(report)
 	}
 	if !cfg.Driver.TunnelUp() {
 		// A FIRST-TIME CUSTOMER'S TRANSCRIPT: on the first tick the tunnel has never connected (it is dialled
 		// after registration), and "reconnects … until it is back" describes a history that did not happen.
 		if cfg.Driver.TunnelEverUp != nil && cfg.Driver.TunnelEverUp() {
-			narrator.driverDown("the drive tunnel is not connected",
-				"nothing to do — the agent reconnects with backoff; devices stay unoffered until the tunnel is back")
+			narrator.driverDown(ui.Problem{Level: ui.LevelLook, What: "the drive tunnel is not connected",
+				Do: "nothing to do — the agent reconnects with backoff; devices stay unoffered until the tunnel is back"})
 		} else {
 			// NOT A FAULT, AND NOT SAID AS ONE (AN_AGENT_THAT_KNOWS_IT_IS_OLD item 5). main dials the tunnel once the farm has
 			// accepted a registration, so the registration's own report always gets here: this used to print "devices are
@@ -513,7 +531,7 @@ func assembleReport(ctx context.Context, cfg Config, narrator *narrator, outcome
 		}
 		return withCloud(report)
 	}
-	narrator.driverUp()
+	narrator.driverUp(outcomes)
 	// AFTER the local door, never before: AttachDevices assigns report.Devices rather than appending to it.
 	return withCloud(farm.AttachDevices(report, outcomes, cfg.Driver.AppiumURL, func(udid string) *int {
 		if cfg.WdaPortFor == nil {
@@ -580,9 +598,15 @@ func registerWithBackoff(ctx context.Context, cfg Config, narrator *narrator) er
 			// THE ID THIS AGENT SENT, AND ONLY IT. Today's farm answers with the id it was sent; a server that
 			// answers with anything else — another id, or escape sequences in its place — is not printed, and this agent
 			// goes on as the node it is.
-			narrator.say("registered as node %s", cfg.NodeID)
+			// THE START BANNER, once, at the first registration: the moment the agent knows whether a newer release is out.
+			narrator.banner(cfg, confirmed.NewerAgentVersion, outcomes)
+			narrator.good("registered as node %s", cfg.NodeID)
+			narrator.connected()
 			if confirmed.NodeID != "" && !strings.EqualFold(confirmed.NodeID, cfg.NodeID) {
-				narrator.say("the farm answered the registration with a different node id than the one this agent sent — this agent keeps its own id and does not print the farm's")
+				narrator.problem(ui.Problem{Level: ui.LevelLook,
+					What: "the farm answered the registration with a different node id than the one this agent sent — this agent keeps its own id and does not print the farm's",
+					Why:  "The farm may be keeping this machine's phones under another node.",
+					Do:   "tell your operator if it repeats — this agent goes on as its own node"})
 			}
 			narrator.newerRelease(cfg.AgentVersion, confirmed.NewerAgentVersion, cfg.Install)
 			narrator.narrateOutcomes(outcomes)
@@ -605,7 +629,10 @@ func registerWithBackoff(ctx context.Context, cfg Config, narrator *narrator) er
 			// The farm's sentence ("Re-register.") is the same at every node door on purpose, and is the wrong advice here.
 			// STOP FIRST (A_MACHINE_THAT_STAYS_THE_CUSTOMERS): this advice, followed while an earlier connect still
 			// ran, was how one folder came to hold two identities offering the same phones.
-			narrator.say("the farm refused this node's identity: this id is already registered at the farm, but not to the workspace of this agent's token. First stop every npx nthcase-agent connect running on this machine; then remove the node-id file in the agent's config folder to mint a fresh identity, or contact your operator.")
+			narrator.stops(ui.Problem{
+				What: "the farm refused this node's identity: this id is already registered at the farm, but not to the workspace of this agent's token.",
+				Why:  "This agent stops: nothing on this machine is offered under an identity the farm refuses.",
+				Do:   "First stop every npx nthcase-agent connect running on this machine; then remove the node-id file in the agent's config folder to mint a fresh identity, or contact your operator."})
 			return fmt.Errorf("identity refused: %w", err)
 		case farm.CallBusy:
 			// A 503 with no envelope is the farm's address answering in its place (NTH_AGENT_0_4_4), as at the heartbeat.
@@ -626,7 +653,7 @@ func registerWithBackoff(ctx context.Context, cfg Config, narrator *narrator) er
 		case farm.CallUnsafeTransport:
 			// TERMINAL, like the revoked token: retrying never turns http into https. The client's own
 			// pre-flight refused before anything crossed the wire; this is the one narration home.
-			narrator.say("%v", err)
+			narrator.unsafeTransport(err)
 			return fmt.Errorf("unsafe transport: %w", err)
 		case farm.CallTransport:
 			narrator.transportOrAnswer("registration", err, "retrying with backoff")
@@ -664,9 +691,10 @@ func backoffSleep(ctx context.Context, cfg Config, n *narrator, floor time.Durat
 	cfg.Sleep(ctx, d)
 }
 
-// narrator prints STATE CHANGES, never ticks.
+// narrator prints STATE CHANGES, never ticks — through the agent's one voice (internal/ui, AN_AGENT_THAT_SPEAKS_PLAINLY):
+// a mark on every line, every problem in three parts, the summary first, and what repeats on one updating line.
 type narrator struct {
-	out         io.Writer
+	out         *ui.Console
 	last        []inventory.Outcome
 	lastWork    farm.HeartbeatWork
 	down        bool
@@ -682,6 +710,58 @@ type narrator struct {
 	newerSaid   string          // the newer release last said (newerRelease), so each is said once
 	saidAnswer  string          // the line last said for an answer the farm did not take a call with (sayOnChange); "" = none
 	install     Install         // how this agent was started: every command it says is spelled from it (Config.Install)
+	bannerSaid  bool            // the start banner is said once, at the first registration
+	pending     []func()        // what the drive path said before the banner, said right after it (later)
+	cloud       int             // the BrowserStack devices this agent offers beside its own (Config.CloudDevices)
+}
+
+// clean is a line's text made fit for a terminal: an error in it folded to one line first (its text can be a farm's or a
+// network's, and a line break in it would be a line nobody wrote), then the agent's terminal filter over the whole of it
+// (farm.ForTerminal) — BEFORE any colour is put on, so the filter takes out what a value carried and nothing of ours.
+func clean(format string, args ...any) string {
+	for i, arg := range args {
+		if err, ok := arg.(error); ok {
+			args[i] = farm.OneLineForTerminal(err.Error())
+		}
+	}
+	return farm.ForTerminal(fmt.Sprintf(format, args...))
+}
+
+// mode is how this narrator's lines are dressed.
+func (n *narrator) mode() ui.Mode { return n.out.Mode() }
+
+// say writes one line that is neither good news nor a problem: a note, dim mark.
+func (n *narrator) say(format string, args ...any) {
+	m := n.mode()
+	n.out.Say(m.Marked(ui.MarkNote, clean(format, args...), nil, n.out.Width())...)
+}
+
+// good writes what works: a green mark.
+func (n *narrator) good(format string, args ...any) {
+	m := n.mode()
+	n.out.Say(m.Marked(ui.MarkOK, clean(format, args...), nil, n.out.Width())...)
+}
+
+// progress is a line that repeats while something is retried: the updating line on a terminal, a line each in a pipe.
+func (n *narrator) progress(mark ui.Mark, format string, args ...any) {
+	n.out.Progress(n.mode().Gutter(mark) + clean(format, args...))
+}
+
+// problem says a problem in its three parts — what is wrong, why it matters, what to do — and the raw error only under
+// --verbose. Every text is filtered as a whole line is (clean).
+func (n *narrator) problem(p ui.Problem) {
+	p.What, p.Why, p.Do, p.Raw = clean("%s", p.What), clean("%s", p.Why), clean("%s", p.Do), clean("%s", p.Raw)
+	for i := range p.Items {
+		p.Items[i] = clean("%s", p.Items[i])
+	}
+	n.out.Say(n.mode().Problem(p, n.out.Width(), n.out.Verbose)...)
+}
+
+// stops is a problem that stops runs on this machine, said under the summary that says so first.
+func (n *narrator) stops(p ui.Problem) {
+	p.Level = ui.LevelStop
+	n.out.Say(n.mode().Headline(ui.LevelStop, "1 thing stops runs on this machine"))
+	n.problem(p)
 }
 
 // tunnelDown says ONCE when this agent starts telling the farm its tunnel is down, and once when it stops — the two
@@ -701,11 +781,13 @@ func (n *narrator) tunnelDown(down bool, why string, tunnelUp bool) {
 		if why == "" {
 			why = "no reason recorded"
 		}
-		n.say("the drive tunnel is down and could not be opened although the farm answers (%s) — this agent now tells the "+
-			"farm so, and the farm keeps this machine's devices off offer until the tunnel is up", why)
+		n.problem(ui.Problem{Level: ui.LevelLook,
+			What: fmt.Sprintf("the drive tunnel is down and could not be opened although the farm answers (%s)", why),
+			Why:  "This agent now tells the farm so, and the farm keeps this machine's devices off offer until the tunnel is up.",
+			Do:   "nothing to do: the agent keeps reopening the tunnel, and says so here when it is up"})
 	case !down && n.saidDown && tunnelUp:
 		n.saidDown = false
-		n.say("the drive tunnel is up — the farm is told so, and offers this machine's devices")
+		n.good("the drive tunnel is up — the farm is told so, and offers this machine's devices")
 	case !down && n.saidDown:
 		n.saidDown = false
 		n.say("the farm did not answer the heartbeat that said the drive tunnel is down, so that is no longer evidence " +
@@ -724,36 +806,103 @@ func (n *narrator) wdaPolicy(statement string) {
 	n.say("%s", statement)
 }
 
-// say writes one line. An error in it is folded to one line first: its text can be a farm's or a network's, and a line break
-// in it would be a line nobody wrote. The writer strips what is left (farm.TerminalWriter).
-func (n *narrator) say(format string, args ...any) {
-	for i, arg := range args {
-		if err, ok := arg.(error); ok {
-			args[i] = farm.OneLineForTerminal(err.Error())
-		}
-	}
-	fmt.Fprintf(n.out, format+"\n", args...)
-}
-
 // refused is THE ONE PLACE a refused credential becomes words — at registration and at heartbeat alike
 // (AN_AGENT_THAT_GUESSES_WHY_IT_WAS_REFUSED).
 //
-// THE FARM KNOWS WHY; THE AGENT KNOWS WHAT TO DO NEXT, and neither says the other's part. The first line is the
-// farm's reason, quoted — or the plain fact that it gave none this agent could read. The second is the remedy, and
-// the remedy names NO CAUSE: this agent used to print "it may have been revoked", a guess, and the commonest refusal
-// is now a token that simply reached the end it was given. Not knowing why is a fact the agent can state; guessing
-// why is the defect.
+// THE FARM KNOWS WHY; THE AGENT KNOWS WHAT TO DO NEXT, and neither says the other's part. What is wrong is the farm's
+// reason, quoted — or the plain fact that it gave none this agent could read. What to do is the remedy, and the remedy
+// names NO CAUSE: this agent used to print "it may have been revoked", a guess, and the commonest refusal is now a token
+// that simply reached the end it was given. Not knowing why is a fact the agent can state; guessing why is the defect.
 //
 // ⚠️ The farm's words ride as an ARGUMENT, never as the format: a server's sentence containing `%s` or `%v` must
 // print as itself. They arrive already made safe for a terminal (farm.SafeForTerminal).
 func (n *narrator) refused(err error) {
+	what := "the farm refused this agent's token and gave no reason this agent could read."
 	var refusal *farm.RefusedError
 	if errors.As(err, &refusal) && refusal.Reason != "" {
-		n.say("the farm refused this agent's token. It says: “%s”", refusal.Reason)
-	} else {
-		n.say("the farm refused this agent's token and gave no reason this agent could read.")
+		what = fmt.Sprintf("the farm refused this agent's token. It says: “%s”", refusal.Reason)
 	}
-	n.say("put a new token from your workspace in NTH_AGENT_TOKEN (a workspace owner creates one in Settings → Agent tokens), then restart the agent.")
+	n.stops(ui.Problem{What: what,
+		Why: "This agent stops: nothing on this machine is offered while its token is refused.",
+		Do:  "put a new token from your workspace in NTH_AGENT_TOKEN (a workspace owner creates one in Settings → Agent tokens), then restart the agent."})
+}
+
+// banner is the start of a run, said once, at the first registration, in at most six lines: the version and whether a
+// newer one is out, where this agent is connected and as which node, what this machine can serve, and how to stop it.
+func (n *narrator) banner(cfg Config, newer string, outcomes []inventory.Outcome) {
+	if n.bannerSaid {
+		return
+	}
+	n.bannerSaid = true
+	m := n.mode()
+	version := cfg.AgentVersion
+	if version == "" {
+		version = "(no version)"
+	}
+	release := m.Dim("· the farm names no newer release")
+	if newer != "" && olderThan(cfg.AgentVersion, newer) {
+		release = m.Look("· v" + strings.TrimPrefix(newer, "v") + " is out — how to update is below")
+	}
+	var serves []string
+	for _, o := range outcomes {
+		if !o.IsNotAsked() {
+			serves = append(serves, platformName(o.Platform()))
+		}
+	}
+	if n.cloud > 0 {
+		serves = append(serves, fmt.Sprintf("BrowserStack (%d device%s on your account)", n.cloud, plural(n.cloud)))
+	}
+	served := strings.Join(serves, ", ")
+	if served == "" {
+		served = "nothing — every platform is skipped (--skip)"
+	}
+	label := func(name string) string { return m.Dim(fmt.Sprintf("%-10s", name)) }
+	n.out.Say(
+		"nth-agent "+clean("%s", version)+" "+release,
+		label("Farm")+clean("%s", cfg.Client.BaseURL)+m.Dim(" · node "+clean("%s", cfg.NodeID)),
+		label("Serves")+served,
+		label("Stop")+"Ctrl-C "+m.Dim("— hands the phones back and tells the farm this machine is leaving"),
+	)
+	for _, say := range n.pending {
+		say()
+	}
+	n.pending = nil
+}
+
+// later says what the drive path found once the banner is out: the registration's own report is built, and its driver
+// gate narrated, BEFORE the farm answers — and the start of a run reads banner first, then its summary.
+func (n *narrator) later(say func()) {
+	if n.bannerSaid {
+		say()
+		return
+	}
+	n.pending = append(n.pending, say)
+}
+
+// ready is the summary when the drive path comes up: what is offered now, in green.
+func (n *narrator) ready(outcomes []inventory.Outcome) {
+	counts := map[inventory.Platform]int{}
+	var order []inventory.Platform
+	for _, o := range outcomes {
+		if o.IsAnswered() && len(o.Offerable()) > 0 {
+			if counts[o.Platform()] == 0 {
+				order = append(order, o.Platform())
+			}
+			counts[o.Platform()] += len(o.Offerable())
+		}
+	}
+	var parts []string
+	for _, p := range order {
+		parts = append(parts, fmt.Sprintf("%d %s device%s", counts[p], platformName(p), plural(counts[p])))
+	}
+	if n.cloud > 0 {
+		parts = append(parts, fmt.Sprintf("%d BrowserStack device%s", n.cloud, plural(n.cloud)))
+	}
+	if len(parts) == 0 {
+		n.out.Say(n.mode().Headline(ui.LevelLook, "Connected, with nothing to offer yet: no usable phone is attached"))
+		return
+	}
+	n.out.Say(n.mode().Headline(ui.LevelGood, "Ready: "+strings.Join(parts, " and ")+" offered"))
 }
 
 // narrateOutcomes prints each platform's situation when it CHANGES from the last printed one — and
@@ -768,13 +917,20 @@ func (n *narrator) narrateOutcomes(outcomes []inventory.Outcome) {
 	for _, o := range outcomes {
 		switch {
 		case o.IsAnswered():
-			n.say("%s: %d usable, %d attached but unusable", o.Platform(), len(o.Offerable()), len(o.Unusable()))
+			line := fmt.Sprintf("%s: %d usable, %d attached but unusable", o.Platform(), len(o.Offerable()), len(o.Unusable()))
+			if len(o.Offerable()) > 0 {
+				n.good("%s", line)
+			} else {
+				n.say("%s", line)
+			}
 			for _, u := range o.Unusable() {
-				n.say("  %s [%s] — %s", u.ID, u.State, u.Remedy)
+				n.problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s [%s] — this phone is attached and cannot be used", u.ID, u.State),
+					Why: "It is not offered for runs until you do this.", Do: u.Remedy})
 			}
 		case o.IsCouldNotAsk():
-			n.say("%s: could not check — %s", o.Platform(), o.Reason())
-			n.say("  what to do: %s", o.Remedy())
+			n.problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s: could not check — %s", o.Platform(), o.Reason()),
+				Why: fmt.Sprintf("No %s phone on this machine is listed or offered until this is fixed.", platformName(o.Platform())),
+				Do:  o.Remedy()})
 		default:
 			n.say("%s: not checked on this host", o.Platform())
 		}
@@ -789,7 +945,7 @@ func (n *narrator) sayLeftOut(outcomes []inventory.Outcome) {
 	if n.leftOutSaid == nil {
 		n.leftOutSaid = map[string]bool{}
 	}
-	var lines []string
+	var phones []string
 	for _, o := range outcomes {
 		for _, d := range o.LeftOut() {
 			key := string(o.Platform()) + " " + d.ID
@@ -797,17 +953,17 @@ func (n *narrator) sayLeftOut(outcomes []inventory.Outcome) {
 				continue
 			}
 			n.leftOutSaid[key] = true
-			lines = append(lines, fmt.Sprintf("  %s %s — %s", o.Platform(), d.ID, d.How))
+			phones = append(phones, fmt.Sprintf("%s %s — %s", o.Platform(), d.ID, d.How))
 		}
 	}
-	if len(lines) == 0 {
+	if len(phones) == 0 {
 		return
 	}
-	n.say("not offered, because the agent offers the farm only phones on this machine's USB cable:")
-	for _, line := range lines {
-		n.say("%s", line)
-	}
-	n.say("  %s", OfferUncabledRemedy(n.install))
+	n.problem(ui.Problem{Level: ui.LevelLook,
+		What:  "not offered, because the agent offers the farm only phones on this machine's USB cable:",
+		Items: phones,
+		Why:   "The phones on the cable are offered as before.",
+		Do:    OfferUncabledRemedy(n.install)})
 }
 
 // AppiumNotHereRemedy is what to do about an Appium endpoint that answered from another machine: start connect again with
@@ -829,8 +985,11 @@ func (n *narrator) narrateWork(work farm.HeartbeatWork) {
 		return
 	}
 	if work.ProvisionTasks > 0 || work.Commands > 0 {
-		n.say("the farm assigned work this agent cannot perform yet (%d provision task(s), %d command(s)) — it stays queued on the farm; a future agent version will pull it",
-			work.ProvisionTasks, work.Commands)
+		n.problem(ui.Problem{Level: ui.LevelLook,
+			What: fmt.Sprintf("the farm assigned work this agent cannot perform yet (%s, %s)",
+				count(work.ProvisionTasks, "provision task"), count(work.Commands, "command")),
+			Why: "It stays queued on the farm; it does not stop runs on this machine.",
+			Do:  "nothing to do now: a future agent version will pull it"})
 	}
 	n.lastWork = work
 }
@@ -858,8 +1017,10 @@ func (n *narrator) offerSkipHints(outcomes []inventory.Outcome) {
 		}
 		if !n.hinted[platform] && now.Sub(since) >= n.hintAfter {
 			n.hinted[platform] = true
-			n.say("%s has not answered for %s — if this machine will never drive %s devices, start the agent with --skip %s and it will stop asking.",
-				platform, now.Sub(since).Round(time.Second), platform, platform)
+			n.problem(ui.Problem{Level: ui.LevelLook,
+				What: fmt.Sprintf("%s has not answered for %s", platform, now.Sub(since).Round(time.Second)),
+				Why:  fmt.Sprintf("This agent keeps asking about %s devices on every heartbeat.", platform),
+				Do:   fmt.Sprintf("if this machine will never drive %s devices, start the agent with --skip %s and it will stop asking.", platform, platform)})
 		}
 	}
 }
@@ -874,19 +1035,25 @@ func (n *narrator) noDriver() {
 	if n.driverWasUp == nil || *n.driverWasUp {
 		down := false
 		n.driverWasUp = &down
-		n.say("devices are not being offered — this agent was started without --appium, so nothing attached here can be driven")
-		n.say("  what to do: run `%s` to see what this machine is missing, then restart with --appium URL", n.install.Line("doctor"))
-		n.say("  your phones stay visible on the Devices screen either way — they are reported as present, just not offered")
+		n.later(func() {
+			n.stops(ui.Problem{
+				What: "devices are not being offered — this agent was started without --appium, so nothing attached here can be driven",
+				Why:  "Your phones stay visible on the Devices screen either way — they are reported as present, just not offered.",
+				Do:   fmt.Sprintf("run `%s` to see what this machine is missing, then restart with --appium URL", n.install.Line("doctor"))})
+		})
 	}
 }
 
 // driverDown / driverUp narrate the drive path's state ONCE per change.
-func (n *narrator) driverDown(reason, remedy string) {
+func (n *narrator) driverDown(p ui.Problem) {
 	if n.driverWasUp == nil || *n.driverWasUp {
 		down := false
 		n.driverWasUp = &down
-		n.say("devices are not being offered — %s", reason)
-		n.say("  what to do: %s", remedy)
+		p.What = "devices are not being offered — " + p.What
+		if p.Why == "" {
+			p.Why = "Your phones stay visible on the Devices screen; they are reported as present, just not offered."
+		}
+		n.later(func() { n.stops(p) })
 	}
 }
 
@@ -895,26 +1062,83 @@ func (n *narrator) driverWaiting() {
 	if n.driverWasUp == nil || *n.driverWasUp {
 		down := false
 		n.driverWasUp = &down
-		n.say("the drive tunnel has not connected yet — it opens once this node is registered, and this machine's devices are offered on the first heartbeat after it connects")
+		n.later(func() {
+			n.progress(ui.MarkNote, "the drive tunnel has not connected yet — it opens once this node is registered, and this machine's devices are offered on the first heartbeat after it connects")
+		})
 	}
 }
 
-func (n *narrator) driverUp() {
+func (n *narrator) driverUp(outcomes []inventory.Outcome) {
 	if n.driverWasUp == nil || !*n.driverWasUp {
 		up := true
 		n.driverWasUp = &up
-		n.say("the drive path is ready — offerable devices are now registered for leasing")
+		n.later(func() {
+			n.ready(outcomes)
+			n.good("the drive path is ready — offerable devices are now registered for leasing")
+		})
 	}
+}
+
+// unsafeTransport is the farm address this agent will not send its token to. The sentence is the agent's own
+// (farm.ValidateBaseURL), and it says what is wrong with the address.
+func (n *narrator) unsafeTransport(err error) {
+	n.stops(ui.Problem{What: farm.OneLineForTerminal(err.Error()),
+		Why: "This agent stops before anything is sent, so your workspace token never crosses the network readable.",
+		Do:  "give the farm's https:// address with --farm (or NTH_AGENT_FARM), then start the agent"})
+}
+
+// connected is the updating line once the farm has this node: "connecting to …" is over.
+func (n *narrator) connected() {
+	n.out.Status(n.mode().Gutter(ui.MarkOK) + n.mode().Dim("connected · waiting for the first heartbeat"))
+}
+
+// heartbeat is the updating line on a terminal after every heartbeat the farm took — the one line that says the agent is
+// still here — and nothing in a pipe, where a line every ten seconds would be a log nobody reads.
+func (n *narrator) heartbeat() {
+	n.out.Status(n.mode().Gutter(ui.MarkOK) + n.mode().Dim("connected · the farm took a heartbeat at "+n.now().Format("15:04:05")))
 }
 
 // transportDown says ONCE that the farm cannot be reached, and what this agent does next (then): "retrying with backoff", or
 // "retrying next tick" for a gateway's 503, which waits for the tick as every 503 does.
 func (n *narrator) transportDown(err error, then string) {
 	if !n.down {
-		n.say("cannot reach the farm (%v) — %s", err, then)
+		what := "cannot reach the farm"
+		if cause := plainCause(err); cause != "" {
+			what += " (" + cause + ")"
+		}
+		n.problem(ui.Problem{Level: ui.LevelLook, What: what + " — " + then,
+			Why: "Your phones are off offer until the farm answers; nothing on this machine is lost.",
+			Do:  "nothing to do if it is brief; if it lasts, check this machine's network and the farm address (--farm or NTH_AGENT_FARM)",
+			Raw: farm.OneLineForTerminal(err.Error())})
 		n.down = true
 	}
 	n.saidAnswer = ""
+}
+
+// plainCause is a network error said in a few plain words, or "" when it is none this agent recognises. The error itself
+// is shown under --verbose: a Go error is not a sentence, and is never printed on its own.
+func plainCause(err error) string {
+	// THE AGENT'S OWN SENTENCE IS NOT A GO ERROR: a gateway answering in the farm's place says so, with its status.
+	var gateway *farm.GatewayError
+	if errors.As(err, &gateway) {
+		return gateway.Error()
+	}
+	text := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(text, "connection refused"):
+		return "nothing is listening at its address"
+	case strings.Contains(text, "no such host"):
+		return "its name does not resolve"
+	case strings.Contains(text, "timeout"), strings.Contains(text, "deadline exceeded"):
+		return "it did not answer in time"
+	case strings.Contains(text, "certificate"), strings.Contains(text, "x509"), strings.Contains(text, "tls"):
+		return "its certificate was not accepted"
+	case strings.Contains(text, "network is unreachable"), strings.Contains(text, "no route to host"):
+		return "this machine has no route to it"
+	case strings.Contains(text, "connection reset"), strings.Contains(text, "eof"):
+		return "the connection was cut"
+	}
+	return ""
 }
 
 // transportOrAnswer is a CallTransport: no answer at all, or an answer this client has no status of its own for — nginx's
@@ -933,12 +1157,16 @@ func (n *narrator) transportOrAnswer(call string, err error, then string) {
 	}
 	var unusable *farm.UnusableAnswerError
 	if errors.As(err, &unusable) {
-		what := "it " + unusable.What
+		raw := ""
 		if unusable.Err != nil {
-			what += " (" + unusable.Err.Error() + ")"
+			raw = unusable.Err.Error()
 		}
-		n.sayOnChange("the farm answered this machine's %s (%d), and this agent could not use the answer: %s — retrying with backoff",
-			call, unusable.Status, farm.OneLineForTerminal(what))
+		n.sayProblemOnChange(ui.Problem{Level: ui.LevelLook,
+			What: fmt.Sprintf("the farm answered this machine's %s (%d), and this agent could not use the answer: it %s — retrying with backoff",
+				call, unusable.Status, farm.OneLineForTerminal(unusable.What)),
+			Why: "Until an answer can be used, the farm does not hear what this machine offers.",
+			Do:  "nothing to do if it passes; if it lasts, update the agent — a newer one may read this answer",
+			Raw: farm.OneLineForTerminal(raw)})
 		return
 	}
 	n.transportDown(err, then)
@@ -959,15 +1187,28 @@ func (n *narrator) notTaken(call string, err error) {
 // changes — another sentence from the farm, another status, another call. A machine left at a limit for a day used to print
 // a line every tick at a 503; it prints a handful now. The farm answered, so a "cannot reach" outage is over.
 //
+// It is a PROGRESS line: the farm answered and the agent is retrying on its own, so on a terminal it is the updating line.
+//
 // ⚠️ The farm's words ride as ARGUMENTS, never in the format: a sentence holding `%s` prints as itself.
 func (n *narrator) sayOnChange(format string, args ...any) {
-	line := fmt.Sprintf(format, args...)
+	line := clean(format, args...)
 	n.down = false
 	if line == n.saidAnswer {
 		return
 	}
 	n.saidAnswer = line
-	n.say("%s", line)
+	n.progress(ui.MarkLook, "%s", line)
+}
+
+// sayProblemOnChange is sayOnChange for an answer this agent could not use, said as a problem.
+func (n *narrator) sayProblemOnChange(p ui.Problem) {
+	n.down = false
+	key := clean("%s", p.What)
+	if key == n.saidAnswer {
+		return
+	}
+	n.saidAnswer = key
+	n.problem(p)
 }
 
 // recovered is a call the farm took. ONCE, when an outage or a refusal ends, it says so — "connection to the farm restored"
@@ -975,11 +1216,34 @@ func (n *narrator) sayOnChange(format string, args ...any) {
 func (n *narrator) recovered(call string) {
 	switch {
 	case n.down:
-		n.say("connection to the farm restored")
+		n.good("connection to the farm restored")
 	case n.saidAnswer != "":
-		n.say("the farm took this machine's %s", call)
+		n.good("the farm took this machine's %s", call)
 	}
 	n.down = false
 	n.saidAnswer = ""
 	n.failures = 0
+}
+
+// platformName is a platform as a person writes it.
+func platformName(p inventory.Platform) string {
+	switch p {
+	case inventory.Android:
+		return "Android"
+	case inventory.IOS:
+		return "iOS"
+	}
+	return string(p)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// count is a number and its noun, agreeing: "1 command", "2 commands" — never "command(s)".
+func count(n int, noun string) string {
+	return fmt.Sprintf("%d %s%s", n, noun, plural(n))
 }

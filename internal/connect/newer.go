@@ -1,10 +1,12 @@
 package connect
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/command"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 )
 
 // ── A NEWER AGENT, SAID ONCE (AN_AGENT_THAT_KNOWS_IT_IS_OLD item 1) ─────────────────────────────────────────────
@@ -47,21 +49,22 @@ func (n *narrator) newerRelease(own, newer string, install Install) {
 		return
 	}
 	n.newerSaid = newer
-	n.say("this agent is %s, and %s is out. It keeps working as it is.", own, newer)
+	why, do := "It keeps working as it is.", ""
 	switch install.Started {
 	case StartedByNpx:
-		n.say("  to update, stop it (Ctrl-C) and start it with the flags you use now: %s", install.Line("connect …"))
+		do = "to update, stop it (Ctrl-C) and start it with the flags you use now: " + install.Line("connect …")
 	case StartedFromGlobal:
-		n.say("  to update, stop it (Ctrl-C), run npm install -g nthcase-agent@latest, and start it the way you do now")
+		do = "to update, stop it (Ctrl-C), run npm install -g nthcase-agent@latest, and start it the way you do now"
 	case StartedFromGlobalByNpx:
-		n.say("  this is the copy installed on this machine with npm install -g, which is older. Started through npx, an installed copy is used before a newer one is fetched.")
-		n.say("  to update, stop it (Ctrl-C), run npm install -g nthcase-agent@latest, and start it the way you do now")
+		why += " This is the copy installed on this machine with npm install -g, which is older. Started through npx, an installed copy is used before a newer one is fetched."
+		do = "to update, stop it (Ctrl-C), run npm install -g nthcase-agent@latest, and start it the way you do now"
 	case StartedFromProject:
-		n.say("  to update, stop it (Ctrl-C), run npm install nthcase-agent@latest in %s, and start it the way you do now", install.Project)
+		do = "to update, stop it (Ctrl-C), run npm install nthcase-agent@latest in " + install.Project + ", and start it the way you do now"
 	default:
-		n.say("  to update, stop it (Ctrl-C) and start it with the flags you use now: %s", install.Line("connect …"))
-		n.say("  or, if it was installed with npm install -g, run npm install -g nthcase-agent@latest and start it the way you do now")
+		do = "to update, stop it (Ctrl-C) and start it with the flags you use now: " + install.Line("connect …") +
+			" — or, if it was installed with npm install -g, run npm install -g nthcase-agent@latest and start it the way you do now"
 	}
+	n.problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("this agent is %s, and %s is out.", own, newer), Why: why, Do: do})
 }
 
 // olderThan answers whether own orders below newer, both read as major.minor.patch with at most one leading `v`. A version

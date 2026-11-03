@@ -2,9 +2,12 @@ package connect
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/wda"
 )
 
@@ -201,7 +204,11 @@ func tidyWda(ctx context.Context, cfg Config, narrator *narrator, tracker *WdaId
 				continue
 			}
 			if err := cfg.WdaStop(ctx, device.ID, port); err != nil {
-				narrator.say("could not stop WebDriverAgent on %s (%v) — it is still running there", device.ID, err)
+				narrator.problem(ui.Problem{Level: ui.LevelLook,
+					What: fmt.Sprintf("could not stop WebDriverAgent on %s — it is still running there", device.ID),
+					Why:  "Your phone keeps showing \"Automation Running\" until it stops.",
+					Do:   "unplug the phone, or stop the agent (Ctrl-C)",
+					Raw:  farm.OneLineForTerminal(err.Error())})
 				continue
 			}
 			narrator.say("nothing has used WebDriverAgent on %s for %s, so it was asked to stop — your phone should "+

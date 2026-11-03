@@ -42,7 +42,8 @@ func TestADeadAppiumOffersNoDevices(t *testing.T) {
 	if devices := body["devices"].([]any); len(devices) != 0 {
 		t.Fatalf("--appium at a dead endpoint must not re-create the phantom by configuration, got %v", devices)
 	}
-	if !strings.Contains(out.String(), "not answering") || !strings.Contains(out.String(), "what to do") {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the remedy follows its arrow, not the words "what to do:".
+	if !strings.Contains(out.String(), "not answering") || !strings.Contains(out.String(), "\n  → start Appium there") {
 		t.Fatalf("the refusal carries a reason and a remedy, got %q", out.String())
 	}
 	// THE STATED LIMITATION STILL REACHES THE CUSTOMER AT THE REFUSAL — what CHANGED (2026-08-23) is what it

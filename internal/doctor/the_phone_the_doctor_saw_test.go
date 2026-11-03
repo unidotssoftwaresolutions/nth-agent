@@ -178,7 +178,9 @@ func TestABlockedMachinesBottomLineNamesTheStuckPhone(t *testing.T) {
 	}
 	flat := unwrapped(render(t, Report{Checks: []Check{unusableDevices(outcomes)}}, Options{}))
 
-	if !strings.Contains(flat, "One thing stops a run happening on this machine") {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the bottom line became the first line, and reads "1 thing stops runs on this
+	// machine" where it read "One thing stops a run happening on this machine".
+	if !strings.Contains(flat, "1 thing stops runs on this machine") {
 		t.Fatalf("the bottom line must stop claiming nothing is wrong; got:\n%s", flat)
 	}
 	if !strings.Contains(flat, "4b0f92aa") || !strings.Contains(flat, "tap Allow on the phone") {

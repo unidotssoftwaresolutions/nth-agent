@@ -146,7 +146,9 @@ func TestAReasonNeverMakesAnUnknownReadAsSatisfied(t *testing.T) {
 	if strings.Contains(line, "ready") {
 		t.Fatalf("ANYTHING NOT ESTABLISHED IS Unknown, never Satisfied — a reason changes nothing; got %q", line)
 	}
-	if !strings.HasPrefix(line, "?? ") {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): could-not-establish wears the agent's one mark for what needs a look, "! ",
+	// where the doctor had "?? " of its own; its words above still say which it is.
+	if !strings.HasPrefix(line, "! ") {
 		t.Fatalf("the gutter still says could-not-establish; got %q", line)
 	}
 }

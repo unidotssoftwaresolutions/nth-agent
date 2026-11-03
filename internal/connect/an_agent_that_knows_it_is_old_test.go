@@ -86,13 +86,12 @@ func TestDevicesNotOfferedIsSaidPlainly(t *testing.T) {
 				continue
 			}
 			said = true
-			if i+1 >= len(lines) || !strings.HasPrefix(lines[i+1], "  what to do: ") {
-				t.Errorf("%s: the fact keeps its remedy on the next line:\n%s", name, out.String())
+			// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the fact is the first of three parts now — why it matters on the next line,
+			// what to do on the one after, after its arrow. The remedy still follows the fact, and nothing in the block shouts.
+			if i+2 >= len(lines) || !strings.HasPrefix(lines[i+2], "  → ") {
+				t.Errorf("%s: the fact keeps its remedy under it:\n%s", name, out.String())
 			}
-			block := []string{line, lines[i+1]}
-			if i+2 < len(lines) && strings.HasPrefix(lines[i+2], "  your phones") {
-				block = append(block, lines[i+2])
-			}
+			block := []string{line, lines[i+1], lines[i+2]}
 			for _, l := range block {
 				for _, word := range allCaps.FindAllString(l, -1) {
 					if word != "URL" {
@@ -158,7 +157,9 @@ func runAgainst(t *testing.T, server *httptest.Server, own string, install conne
 func TestANewerReleaseIsSaidOnceAndTheAgentKeepsWorking(t *testing.T) {
 	farm, server := newVersionFarm(t, "0.4.1", "0.4.1")
 	transcript := runAgainst(t, server, "v0.4.0", connect.Install{Started: connect.StartedByNpx}, 5)
-	if n := strings.Count(transcript, "v0.4.1 is out"); n != 1 {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the start banner says whether a newer release is out too, by design — so the
+	// count is of the block that says it and how to update, which is still said once.
+	if n := strings.Count(transcript, "and v0.4.1 is out"); n != 1 {
 		t.Fatalf("the farm named 0.4.1 at the door and on five heartbeats; say it once, got %d:\n%s", n, transcript)
 	}
 	if !strings.Contains(transcript, "this agent is v0.4.0, and v0.4.1 is out") || !strings.Contains(transcript, "It keeps working as it is.") {
@@ -185,7 +186,9 @@ func TestANewerReleaseIsSaidOnceAndTheAgentKeepsWorking(t *testing.T) {
 	if err := connect.Run(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(out.String(), "v0.4.1 is out") != 1 || strings.Count(out.String(), "v0.4.2 is out") != 1 {
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): counted on the block's own sentence — the start banner names the release the
+	// farm named at the door as well, once, by design.
+	if strings.Count(out.String(), "and v0.4.1 is out") != 1 || strings.Count(out.String(), "and v0.4.2 is out") != 1 {
 		t.Fatalf("0.4.1, then 0.4.2: each said once:\n%s", out.String())
 	}
 }
@@ -225,7 +228,9 @@ func TestTheUpdateCommandFitsHowTheAgentWasStarted(t *testing.T) {
 		// (NTH_AGENT_0_4_3): it was started through npx, and that form runs this release or a newer one even where the
 		// global install's own command is not on PATH. So the npx form is held out of the update advice, not the transcript.
 		{"a global install that npx ran", connect.Install{Started: connect.StartedFromGlobalByNpx},
-			[]string{global, "this is the copy installed on this machine with npm install -g, which is older. Started through npx, an installed copy is used before a newer one is fetched.",
+			// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the sentence is the second of the block's three parts now, after "It keeps
+			// working as it is.", so it starts with a capital.
+			[]string{global, "This is the copy installed on this machine with npm install -g, which is older. Started through npx, an installed copy is used before a newer one is fetched.",
 				"run `npx nthcase-agent@latest doctor`"},
 			[]string{"\n  to update, stop it (Ctrl-C) and start it with the flags you use now: npx nthcase-agent@latest"}},
 		{"a project", connect.Install{Started: connect.StartedFromProject, Project: "/work/app"},

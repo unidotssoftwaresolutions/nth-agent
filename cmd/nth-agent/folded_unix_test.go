@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/capture"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 )
 
 // ── AN_AGENT_THAT_KNOWS_IT_IS_OLD item 4, as a person sees it: connect folds to the terminal, and only to a terminal ──
@@ -48,11 +49,25 @@ func TestConnectFoldsToTheTerminalItRunsIn(t *testing.T) {
 	terminal.Close()
 	reading.Wait()
 
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): a terminal is COLOURED now, and keeps one updating line it rewrites in place
+	// (\r and a clear) — so a line is measured as a person sees it: escape codes are not columns, and of a line rewritten
+	// in place only its last version is on the screen.
 	text := strings.ReplaceAll(seen.String(), "\r\n", "\n")
-	if strings.Join(strings.Fields(text), " ") == "" || !strings.Contains(strings.Join(strings.Fields(text), " "), strings.Join(strings.Fields(capture.LocalNetworkOpen), " ")) {
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		if at := strings.LastIndex(line, "\r"); at >= 0 {
+			line = line[at+1:]
+		}
+		lines = append(lines, ui.Plain(line))
+	}
+	shown := strings.Join(strings.Fields(strings.Join(lines, "\n")), " ")
+	if shown == "" || !strings.Contains(shown, strings.Join(strings.Fields(capture.LocalNetworkOpen), " ")) {
 		t.Fatalf("connect said what it says at its start:\n%s", text)
 	}
-	for _, line := range strings.Split(text, "\n") {
+	if !strings.Contains(text, "\033[") {
+		t.Fatalf("a terminal, with nothing turning colour off, is coloured:\n%q", text)
+	}
+	for _, line := range lines {
 		if n := len([]rune(line)); n > 60 {
 			t.Errorf("a %d-column line in a 60-column terminal: %q", n, line)
 		}
@@ -67,8 +82,13 @@ func TestConnectWritesEveryLineWholeIntoAPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	ended(t, cmd, out)
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): the line carries its mark now, "! ", and is otherwise whole — and plain: a
+	// pipe gets no escape code.
+	if strings.Contains(out.String(), "\033[") {
+		t.Fatalf("a pipe is not coloured:\n%q", out.String())
+	}
 	for _, line := range strings.Split(out.String(), "\n") {
-		if line == capture.LocalNetworkOpen {
+		if line == "! "+capture.LocalNetworkOpen {
 			return
 		}
 	}

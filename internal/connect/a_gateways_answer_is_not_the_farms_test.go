@@ -204,10 +204,12 @@ func TestAGatewayInFrontOfAnAbsentFarmIsTheFarmNotReached(t *testing.T) {
 		"cannot reach the farm (the farm's address answered 502, not the farm) — retrying with backoff",
 		"connection to the farm restored",
 	}
+	// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): a problem is three lines now, and only its first — the one at column 0, after
+	// its mark — is what the loop SAID; why it matters and what to do are indented under it.
 	var loop []string
 	for _, line := range lines {
-		if strings.Contains(line, "farm") && !strings.Contains(line, "drive tunnel") {
-			loop = append(loop, line)
+		if strings.Contains(line, "farm") && !strings.Contains(line, "drive tunnel") && !strings.HasPrefix(line, " ") {
+			loop = append(loop, unmarked(line))
 		}
 	}
 	if strings.Join(loop, "\n") != strings.Join(want, "\n") {

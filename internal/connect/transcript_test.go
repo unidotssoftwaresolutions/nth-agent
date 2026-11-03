@@ -237,6 +237,11 @@ func Narrated(source string) []string {
 		regexp.MustCompile(`driverDown\(\s*"((?:[^"\\]|\\.)*)"`),
 		regexp.MustCompile(`driverDown\([^"]*"(?:[^"\\]|\\.)*",\s*\n?\s*"((?:[^"\\]|\\.)*)"`),
 		regexp.MustCompile(`Fprint(?:f|ln)?\((?:t\.cfg\.Out|n\.out|cfg\.Out), "((?:[^"\\]|\\.)*)"`),
+		// AN_AGENT_THAT_SPEAKS_PLAINLY: the loop speaks in the agent's one voice — good news (good), a line that repeats
+		// (progress, after its mark), and a problem's three parts (What / Why / Do, a literal or a Sprintf's format).
+		regexp.MustCompile(`\bgood\("((?:[^"\\]|\\.)*)"`),
+		regexp.MustCompile(`\bprogress\([^,"]+,\s*"((?:[^"\\]|\\.)*)"`),
+		regexp.MustCompile(`\b(?:What|Why|Do):\s*(?:fmt\.Sprintf\()?"((?:[^"\\]|\\.)*)"`),
 	} {
 		for _, m := range re.FindAllStringSubmatch(source, -1) {
 			found = append(found, m[1])
@@ -250,9 +255,12 @@ func TestEveryNarratedSentenceReadsAsTheStateTheAgentIsIn(t *testing.T) {
 	// INSTRUMENT GUARD: the scanner sees a planted sentence in each shape it claims to read.
 	planted := "n.say(\"PLANTED alpha %s\")\nnarrator.driverDown(\"PLANTED beta\",\n\t\"PLANTED gamma\")\nfmt.Fprintf(t.cfg.Out, \"PLANTED delta\\n\")\n" +
 		"c.sayOnce(\"kept \"+r.Lease, \"PLANTED epsilon %s\", serial)\n" +
-		"n.sayOnChange(\"PLANTED zeta (%d)\", status)\n"
+		"n.sayOnChange(\"PLANTED zeta (%d)\", status)\n" +
+		"n.good(\"PLANTED eta %s\", id)\n" + "n.progress(ui.MarkLook, \"PLANTED theta\")\n" +
+		"n.problem(ui.Problem{What: fmt.Sprintf(\"PLANTED iota %s\", x),\n\tWhy: \"PLANTED kappa\", Do: \"PLANTED lambda\"})\n"
 	got := strings.Join(Narrated(planted), "|")
-	for _, want := range []string{"PLANTED alpha", "PLANTED beta", "PLANTED gamma", "PLANTED delta", "PLANTED epsilon", "PLANTED zeta"} {
+	for _, want := range []string{"PLANTED alpha", "PLANTED beta", "PLANTED gamma", "PLANTED delta", "PLANTED epsilon", "PLANTED zeta",
+		"PLANTED eta", "PLANTED theta", "PLANTED iota", "PLANTED kappa", "PLANTED lambda"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("the scanner does not see %q in the shape it is written in: %q", want, got)
 		}

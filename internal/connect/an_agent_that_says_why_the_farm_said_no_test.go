@@ -156,15 +156,28 @@ func limitConfig(f *limitFarm, out io.Writer, w *waits, interval, base, ceiling 
 }
 
 // afterRegistration is every line said after "registered as node", which is where the farm's answers are narrated.
+//
+// AMENDED (AN_AGENT_THAT_SPEAKS_PLAINLY): every line the loop says starts with its mark now (✓ ! ✗ ·), so the mark is
+// taken off before a line is compared — these seals hold the SENTENCE; the mark has seals of its own in internal/ui.
 func afterRegistration(out string) []string {
 	_, rest, _ := strings.Cut(out, "registered as node "+limitNode+"\n")
 	var lines []string
 	for _, line := range strings.Split(rest, "\n") {
 		if strings.TrimSpace(line) != "" {
-			lines = append(lines, line)
+			lines = append(lines, unmarked(line))
 		}
 	}
 	return lines
+}
+
+// unmarked is a line with its mark taken off: what the sentence says, as the seals before the marks compared it.
+func unmarked(line string) string {
+	for _, mark := range []string{"✓ ", "! ", "✗ ", "· "} {
+		if strings.HasPrefix(line, mark) {
+			return strings.TrimPrefix(line, mark)
+		}
+	}
+	return line
 }
 
 // quoted is how a line carries the farm's sentence: in quotation marks, whole.
