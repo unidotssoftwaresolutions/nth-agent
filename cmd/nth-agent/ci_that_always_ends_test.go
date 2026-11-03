@@ -28,8 +28,8 @@ const longestJob = 120
 // untrustedInScript is a value somebody outside the workflow chooses: a dispatch input, a ref or branch name, the event.
 var untrustedInScript = regexp.MustCompile(`\$\{\{[^}]*\b(?:inputs\.|github\.(?:ref_name|head_ref|event\b))[^}]*\}\}`)
 
-// buildsOrTests is a ci.yml step that compiles or tests: each carries a timeout of its own. ci.yml's scripts are one command
-// each, so a `go build` anywhere in one is that step's command (the cross-compile's comes after `GOOS=${{ matrix.goos }}`).
+// buildsOrTests is a ci.yml step that compiles or tests: each carries a timeout of its own. ci.yml's scripts run one go
+// command each, so a `go build` anywhere in one is that step's command (the cross-compile's comes after `GOOS=${{ matrix.goos }}`).
 var buildsOrTests = regexp.MustCompile(`(?:^|\s)go\s+(?:build|vet|test)\s`)
 
 // jobKey is a job's id line, at two spaces under `jobs:`.

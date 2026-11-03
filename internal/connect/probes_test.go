@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -63,28 +64,53 @@ func TestParseSkipNamesPlatformsAsValues(t *testing.T) {
 // ── item 3: the narration offers the switch, once ───────────────────────────────────────────────────────────
 
 func TestASustainedFailureOffersTheSkipSwitchExactlyOnce(t *testing.T) {
-	stub, server := newStubFarm(t)
-	_ = stub
-	var out strings.Builder
-	cfg := config(server, &out, 4)
-	cfg.Probes = func(ctx context.Context) []inventory.Outcome {
-		return []inventory.Outcome{
-			inventory.Answered(inventory.Android, nil, nil),
-			inventory.CouldNotAsk(inventory.IOS, "usbmuxd is not running", "start it"),
+	// AMENDED (AN_AGENT_THAT_PASSES_ON_WINDOWS_ROUND_TWO): this read the real clock. The four ticks run back to back, and
+	// on windows-latest the clock read the same instant at each: a failure 0 old, never 1 ns, and the switch was rightly
+	// never offered (got 0). The window is the subject, both ways, on the loop's own clock (Config.Now): a clock that
+	// moves past the window offers the switch exactly once; a clock that does not move never offers it, however many
+	// ticks fail.
+	for _, c := range []struct {
+		name   string
+		step   time.Duration // how far the clock moves at each read
+		offers int
+	}{
+		{"a failure the clock has carried past the window is offered the switch exactly once", time.Minute, 1},
+		{"a failure the clock has not aged is never offered the switch", 0, 0},
+	} {
+		stub, server := newStubFarm(t)
+		var out strings.Builder
+		cfg := config(server, &out, 4)
+		cfg.Probes = func(ctx context.Context) []inventory.Outcome {
+			return []inventory.Outcome{
+				inventory.Answered(inventory.Android, nil, nil),
+				inventory.CouldNotAsk(inventory.IOS, "usbmuxd is not running", "start it"),
+			}
 		}
-	}
-	cfg.HintAfter = time.Nanosecond // the window is a parameter; "sustained" = any tick after the first
+		cfg.HintAfter = time.Nanosecond // the window is a parameter; "sustained" = any tick after the first
+		var mu sync.Mutex
+		clock := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+		cfg.Now = func() time.Time {
+			mu.Lock()
+			defer mu.Unlock()
+			clock = clock.Add(c.step)
+			return clock
+		}
 
-	if err := connect.Run(context.Background(), cfg); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	hint := "--skip ios"
-	if got := strings.Count(out.String(), hint); got != 1 {
-		t.Fatalf("the switch is offered EXACTLY once, got %d in %q", got, out.String())
-	}
-	// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the platform is written iOS; the flag's value stays `ios`.
-	if !strings.Contains(out.String(), "will never drive iOS devices") {
-		t.Fatalf("the offer explains when to use it, got %q", out.String())
+		if err := connect.Run(context.Background(), cfg); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		// Instrument guard: every tick ran and said the failure, so a switch never offered is the window's answer, not
+		// a loop that stopped short.
+		if beats := stub.heartbeats.Load(); beats != 4 || !strings.Contains(out.String(), "iOS: could not check") {
+			t.Fatalf("%s: instrument guard: 4 ticks that each find iOS failing, got %d heartbeats in %q", c.name, beats, out.String())
+		}
+		if got := strings.Count(out.String(), "--skip ios"); got != c.offers {
+			t.Fatalf("%s: want %d, got %d in %q", c.name, c.offers, got, out.String())
+		}
+		// AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the platform is written iOS; the flag's value stays `ios`.
+		if c.offers == 1 && !strings.Contains(out.String(), "will never drive iOS devices") {
+			t.Fatalf("the offer explains when to use it, got %q", out.String())
+		}
 	}
 }
 
