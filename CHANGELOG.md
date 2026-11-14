@@ -107,6 +107,12 @@ example: run it through `npx` with that name in front, the way the README shows.
 - **Limits hold across a reconnect.** A request still running when the tunnel dropped was counted by nothing, so creates were
   no longer one at a time and requests in flight had no limit. One create at a time and at most 512 requests in flight now
   hold for the whole agent, whichever tunnel they came on.
+- **Three libraries are raised past flaws Go's vulnerability database names.** The brotli decoder that reads the farm's
+  frames could be made to hold far more memory than a crafted stream sends; Go's HTTP/2 code (`golang.org/x/net`), which
+  BrowserStack uploads go through, had five flaws, among them a crash and unbounded memory and CPU; and Go's text library
+  (`golang.org/x/text`) could loop forever on invalid input. They are now brotli 1.2.7, `x/net` 0.60.0 and `x/text` 0.42.0,
+  with the `x/sys` and `x/crypto` releases those need. CI now checks every change against Go's vulnerability database, and
+  fails one whose code can reach a known flaw.
 
 ## 0.5.6
 
