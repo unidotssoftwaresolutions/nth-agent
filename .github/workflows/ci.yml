@@ -130,7 +130,7 @@ jobs:
       # code can call, in the standard library of the Go above and in every module go.sum names. It runs at a version named
       # here, never @latest: raise it on purpose, as the toolchain line is raised.
       - name: No known vulnerability reaches the agent
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
         timeout-minutes: 10
 
   # THE UNIT TESTS ON WINDOWS (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the agent is built for Windows now, and the code
