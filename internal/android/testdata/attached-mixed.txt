@@ -1,0 +1,5 @@
+List of devices attached
+R5CT30ABCDE            device usb:338690048X product:a54xnaxx model:SM_A546B device:a54x transport_id:3
+R5CT99ZZZZZ            unauthorized usb:338690049X transport_id:4
+emulator-5554          offline transport_id:5
+0123456789ABCDEF       no permissions (user in plugdev group; are your udev rules wrong?); see [http://developer.android.com/tools/device.html] transport_id:6

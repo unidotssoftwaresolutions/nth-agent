@@ -1,0 +1,17 @@
+# Build output
+/nth-agent
+# …and the artefact built under the old name, which is still on disk. Renaming the line above without
+# keeping this one would offer a 12 MB executable to the next commit. Delete the file, then this line.
+/qanguru-agent
+/dist/
+*.exe
+
+# Go
+/vendor/
+*.test
+*.out
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

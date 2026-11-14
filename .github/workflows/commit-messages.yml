@@ -1,0 +1,122 @@
+# A HISTORY ANYONE CAN READ — the commit messages a push or a pull request adds, read with the tree's own rules.
+#
+# This repository is public, and so is every commit message in it, every author and committer, and every tag's message. The
+# tree's census reads files and skips .git, and six public commits once carried a link to a private session in their
+# messages. So every push and every pull request has the commits it adds read here, by the module root's
+# a_history_anyone_can_read_test.go: no pointer a reader cannot follow, no session trailer, and no value of the forbidden
+# list (given from the repository secret of that name, and this job refuses to run without it).
+#
+# ⚠️ ON EVERY PUSH, UNLIKE ci.yml, AND THAT IS ON PURPOSE. ci.yml left push for cost; a commit message is published the moment
+# it is pushed, so this one has to run then. It is one small job: a checkout of the history, one Go test, no build of the
+# agent and no cache.
+
+name: commit-messages
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  commit-messages:
+    runs-on: ubuntu-latest
+    # Every job ends on its own (CI_THAT_ALWAYS_ENDS).
+    timeout-minutes: 15
+    permissions:
+      contents: read # to read the history it checks; it writes nothing
+    env:
+      GOTOOLCHAIN: local # the Go setup-go installed, never one a go command would fetch
+    steps:
+      # THE WHOLE HISTORY, so the range below can be read whatever it reaches, and every tag with its message.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: The forbidden list is given
+        run: |
+          if [ -z "$(printf '%s' "${NTH_AGENT_FORBIDDEN_VALUES:-}" | tr -d '[:space:]')" ]; then
+            echo "refusing: the repository secret NTH_AGENT_FORBIDDEN_VALUES is missing or empty, so the commit messages cannot be checked for its values." >&2
+            exit 1
+          fi
+          echo "the forbidden list is given"
+        env:
+          NTH_AGENT_FORBIDDEN_VALUES: ${{ secrets.NTH_AGENT_FORBIDDEN_VALUES }}
+        timeout-minutes: 1
+
+      # WHAT THIS PUSH OR PULL REQUEST ADDS. A push to a branch adds what lies between the commit the branch was at and the
+      # one it is at now. A new branch or tag, or a history pushed over another, has no such commit here, and then everything
+      # its commit reaches is read. A pull request adds what lies between its base and its head. The event's values reach
+      # the script through env:, never its text.
+      - name: The range this push or pull request adds
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request)
+              if [ -z "${BASE:-}" ] || [ -z "${HEAD:-}" ]; then
+                echo "refusing: the pull request names no base or no head." >&2
+                exit 1
+              fi
+              range="$BASE..$HEAD"
+              ;;
+            push)
+              if [ -n "${BEFORE:-}" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+                range="$BEFORE..$AFTER"
+              else
+                range="$AFTER"
+              fi
+              ;;
+            *)
+              echo "refusing: this runs on a push or a pull request, and was started by $EVENT." >&2
+              exit 1
+              ;;
+          esac
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "reading the commits of $range"
+        id: range
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        timeout-minutes: 1
+
+      - name: The Go go.mod names
+        run: |
+          set -euo pipefail
+          version="$(awk '$1 == "toolchain" { sub(/^go/, "", $2); print $2 }' go.mod)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "refusing: go.mod has no single toolchain line naming one Go release (toolchain goX.Y.Z), so the Go to build with is not named." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+        id: go
+        timeout-minutes: 2
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: false
+
+      # PASS, NOT SKIP: the forbidden list's part of the census must have run.
+      - name: No commit message carries a pointer or a value
+        run: |
+          set -uo pipefail
+          ran=0
+          go test -count=1 -v -run '^TestNoCommitMessageCarriesAPointerOrAValue$' . > commit-messages.txt 2>&1 || ran=$?
+          grep -E '^(\s*--- (PASS|FAIL|SKIP)|\s+[^ ]+_test\.go:[0-9]+:|\s+commit [0-9a-f]+ )' commit-messages.txt
+          if ! grep -q -- '--- PASS: TestNoCommitMessageCarriesAPointerOrAValue/no_value_of_the_forbidden_list' commit-messages.txt; then
+            echo "::error::the forbidden list's part of the census did not pass"
+            exit 1
+          fi
+          exit $ran
+        env:
+          NTH_AGENT_COMMIT_RANGE: ${{ steps.range.outputs.range }}
+          NTH_AGENT_FORBIDDEN_VALUES: ${{ secrets.NTH_AGENT_FORBIDDEN_VALUES }}
+        timeout-minutes: 10

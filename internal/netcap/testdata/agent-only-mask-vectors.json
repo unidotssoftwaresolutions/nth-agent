@@ -1,0 +1,184 @@
+{
+ "about": "THE AGENT'S OWN CASES: bodies that crossed the wire compressed, which the runner never sees encoded (mitmproxy decodes before it writes a HAR) and the agent decodes itself before it masks. Each body was compressed by a reference implementation (producedBy) - the C libraries mitmproxy's net/encoding.py itself calls - so the agent's Go decoders are checked against encoders that are not their own. internal/netcap/agent_only_vectors_test.go runs every case through the agent's real record path: `decoded` is what the body must decode to, `absent` must be masked and `present` must survive. Regenerate with the script named in the agent's slice report; never by hand.",
+ "cases": [
+  {
+   "id": "gzip-json-response",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "gzip",
+   "decoded": "{\"session\":{\"accessToken\":\"AOV1HIDDEN\",\"user\":{\"name\":\"keepAOVNAME\"}},\"items\":[{\"id\":1,\"title\":\"keepAOVTITLE\"}]}",
+   "encodedBase64": "H4sIAAAAAAAC/6tWKk4tLs7Mz1OyqlZKTE4GckLys1OBXCVH/zBDD08XF1c/JR2l0uLUIpCSvMTcVKBcdmpqAVDez9HXVam2VkcpsyQ1t1jJKrpaKTNFycpQR6kksyQHSWGIZ4gPUGVsLQAhfSmtcAAAAA==",
+   "producedBy": "Python 3.14.6 gzip (zlib 1.2.12), mtime 0",
+   "absent": [
+    "AOV1HIDDEN"
+   ],
+   "present": [
+    "keepAOVNAME",
+    "keepAOVTITLE"
+   ]
+  },
+  {
+   "id": "deflate-zlib-json-response",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "deflate",
+   "decoded": "{\"config\":{\"apiKey\":\"AOV2HIDDEN\",\"theme\":\"keepAOVTHEME\"},\"credentials\":{\"user\":\"AOV3HIDDEN\"}}",
+   "encodedBase64": "eJyrVkrOz0vLTFeyqlZKLMj0Tq1UslJy9A8z8vB0cXH1U9JRKslIzU0FCmanphYAJUI8XH1dlWp1lJKLUlNS80oyE3OKQZpLi1OLIFqNoVprawFjlh1D",
+   "producedBy": "Python 3.14.6 zlib.compress (zlib 1.2.12)",
+   "absent": [
+    "AOV2HIDDEN",
+    "AOV3HIDDEN"
+   ],
+   "present": [
+    "keepAOVTHEME"
+   ]
+  },
+  {
+   "id": "deflate-raw-json-response",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "deflate",
+   "decoded": "{\"config\":{\"apiKey\":\"AOV2HIDDEN\",\"theme\":\"keepAOVTHEME\"},\"credentials\":{\"user\":\"AOV3HIDDEN\"}}",
+   "encodedBase64": "q1ZKzs9Ly0xXsqpWSizI9E6tVLJScvQPM/LwdHFx9VPSUSrJSM1NBQpmp6YWACVCPFx9XZVqdZSSi1JTUvNKMhNzikGaS4tTiyBajaFaa2sB",
+   "producedBy": "Python 3.14.6 zlib.compressobj(wbits=-15) (zlib 1.2.12)",
+   "absent": [
+    "AOV2HIDDEN",
+    "AOV3HIDDEN"
+   ],
+   "present": [
+    "keepAOVTHEME"
+   ],
+   "note": "deflate with no zlib header: mitmproxy falls back to raw deflate (net/encoding.py decode_deflate), and so does the agent"
+  },
+  {
+   "id": "deflateraw-json-response",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "deflateraw",
+   "decoded": "{\"config\":{\"apiKey\":\"AOV2HIDDEN\",\"theme\":\"keepAOVTHEME\"},\"credentials\":{\"user\":\"AOV3HIDDEN\"}}",
+   "encodedBase64": "q1ZKzs9Ly0xXsqpWSizI9E6tVLJScvQPM/LwdHFx9VPSUSrJSM1NBQpmp6YWACVCPFx9XZVqdZSSi1JTUvNKMhNzikGaS4tTiyBajaFaa2sB",
+   "producedBy": "Python 3.14.6 zlib.compressobj(wbits=-15) (zlib 1.2.12)",
+   "absent": [
+    "AOV2HIDDEN",
+    "AOV3HIDDEN"
+   ],
+   "present": [
+    "keepAOVTHEME"
+   ]
+  },
+  {
+   "id": "br-json-response",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "br",
+   "decoded": "{\"session\":{\"accessToken\":\"AOV1HIDDEN\",\"user\":{\"name\":\"keepAOVNAME\"}},\"items\":[{\"id\":1,\"title\":\"keepAOVTITLE\"}]}",
+   "encodedBase64": "G28AUJwHdiyDRHc4TOtV7wxqkb2tmDo58oMFeAjaquQLKClZuvpCRyd3YP0C+5ZktQCzJPZAB0cnejqYZB5hHtzi2mE14ax9iitoCQ022XazHI+O5/kzjDOkQhk1",
+   "producedBy": "brotli 1.2.0 (Google's C library, Python binding)",
+   "absent": [
+    "AOV1HIDDEN"
+   ],
+   "present": [
+    "keepAOVNAME"
+   ]
+  },
+  {
+   "id": "zstd-json-response",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "zstd",
+   "decoded": "{\"config\":{\"apiKey\":\"AOV2HIDDEN\",\"theme\":\"keepAOVTHEME\"},\"credentials\":{\"user\":\"AOV3HIDDEN\"}}",
+   "encodedBase64": "KLUv/SBdvQIAAgUTGmBLdVRkpmEAFgjpykPDHf8XKcTrJSACAHAXtSLxkmG6lgnm5jvhsblUowBKg6UM/BFeX/HDdLEAnZOkYynjdeMAB5np2uAKb9FMAwIAIEvjB2UG",
+   "producedBy": "zstandard 0.25.0 (libzstd 1.5.7)",
+   "absent": [
+    "AOV2HIDDEN",
+    "AOV3HIDDEN"
+   ],
+   "present": [
+    "keepAOVTHEME"
+   ]
+  },
+  {
+   "id": "zstd-two-frames-response",
+   "location": "respBody",
+   "contentType": "application/x-ndjson",
+   "contentEncoding": "zstd",
+   "decoded": "{\"session\":{\"accessToken\":\"AOV1HIDDEN\",\"user\":{\"name\":\"keepAOVNAME\"}},\"items\":[{\"id\":1,\"title\":\"keepAOVTITLE\"}]}\n{\"refresh_token\":\"AOV6HIDDEN\",\"note\":\"keepAOVNOTE\"}",
+   "encodedBase64": "KLUv/SBxDQMAIoYVG3CJMwb0I8XQ2J+SbFShwdYoc6Y+9OZ91acvJkUkxFeAHczw2hulvNCGg3wdfW0U40ugECVRB9XmXJ3FIXQTo5FlGAcgKYk6d9o8bFcZZhnm7mm7usMCAGTKCk2g9Ci1L/0gM5kBAHsicmVmcmVzaF90b2tlbiI6IkFPVjZISURERU4iLCJub3RlIjoia2VlcEFPVk5PVEUifQ==",
+   "producedBy": "zstandard 0.25.0 (libzstd 1.5.7)",
+   "absent": [
+    "AOV1HIDDEN",
+    "AOV6HIDDEN"
+   ],
+   "present": [
+    "keepAOVNAME",
+    "keepAOVNOTE"
+   ],
+   "note": "two zstd frames back to back: mitmproxy reads across frames (read_across_frames=True), and so does the agent"
+  },
+  {
+   "id": "gzip-form-request",
+   "location": "reqBody",
+   "contentType": "application/x-www-form-urlencoded",
+   "contentEncoding": "gzip",
+   "decoded": "grant_type=password&username=keepAOVUSER&password=AOV4HIDDEN&client_secret=AOV5HIDDEN",
+   "encodedBase64": "H4sIAAAAAAAC/0svSswriS+pLEi1LUgsLi7PL0pRKy1OLcpLzE21zU5NLXD0DwsNdg1Sg8naAgVMPDxdXFz91JJzMlOBuotTk4tSS0ASphAJAMzg+btVAAAA",
+   "producedBy": "Python 3.14.6 gzip (zlib 1.2.12), mtime 0",
+   "absent": [
+    "AOV4HIDDEN",
+    "AOV5HIDDEN"
+   ],
+   "present": [
+    "keepAOVUSER",
+    "grant_type=password"
+   ]
+  },
+  {
+   "id": "br-form-request",
+   "location": "reqBody",
+   "contentType": "application/x-www-form-urlencoded",
+   "contentEncoding": "br",
+   "decoded": "grant_type=password&username=keepAOVUSER&password=AOV4HIDDEN&client_secret=AOV5HIDDEN",
+   "encodedBase64": "G1QAAATqZK1dSERBkG2M+uAcC8VQk4LwfzEfnGOl6BEGC+kR4OR7R5f1eGyQl/23NVxMhNjjgoEa0biUAw==",
+   "producedBy": "brotli 1.2.0 (Google's C library, Python binding)",
+   "absent": [
+    "AOV4HIDDEN",
+    "AOV5HIDDEN"
+   ],
+   "present": [
+    "keepAOVUSER"
+   ]
+  },
+  {
+   "id": "zlib-stream-labelled-gzip",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "gzip",
+   "decoded": "{\"session\":{\"accessToken\":\"AOV1HIDDEN\",\"user\":{\"name\":\"keepAOVNAME\"}},\"items\":[{\"id\":1,\"title\":\"keepAOVTITLE\"}]}",
+   "encodedBase64": "eJyrVipOLS7OzM9TsqpWSkxOBnJC8rNTgVwlR/8wQw9PFxdXPyUdpdLi1CKQkrzE3FSgXHZqagFQ3s/R11WptlZHKbMkNbdYySq6WikzRcnKUEepJLMkB0lhiGeID1BlbC0ACuMj8A==",
+   "producedBy": "Python 3.14.6 zlib.compress (zlib 1.2.12)",
+   "absent": [
+    "AOV1HIDDEN"
+   ],
+   "present": [
+    "keepAOVNAME"
+   ],
+   "note": "a zlib stream sent as gzip: mitmproxy's gzip decoder auto-detects zlib too (wbits=47), and so does the agent"
+  },
+  {
+   "id": "gzip-with-trailing-bytes",
+   "location": "respBody",
+   "contentType": "application/json",
+   "contentEncoding": "gzip",
+   "decoded": "{\"session\":{\"accessToken\":\"AOV1HIDDEN\",\"user\":{\"name\":\"keepAOVNAME\"}},\"items\":[{\"id\":1,\"title\":\"keepAOVTITLE\"}]}",
+   "encodedBase64": "H4sIAAAAAAAC/6tWKk4tLs7Mz1OyqlZKTE4GckLys1OBXCVH/zBDD08XF1c/JR2l0uLUIpCSvMTcVKBcdmpqAVDez9HXVam2VkcpsyQ1t1jJKrpaKTNFycpQR6kksyQHSWGIZ4gPUGVsLQAhfSmtcAAAAAAAAAA=",
+   "producedBy": "Python 3.14.6 gzip (zlib 1.2.12), mtime 0",
+   "absent": [
+    "AOV1HIDDEN"
+   ],
+   "present": [
+    "keepAOVNAME"
+   ],
+   "note": "bytes after the gzip member are not read, as mitmproxy's zlib leaves them (unused_data)"
+  }
+ ]
+}

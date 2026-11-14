@@ -1,0 +1,13 @@
+{
+	"name": "nth-agent",
+	"version": "0.0.2",
+	"description": "Not the NthCase agent. Run it with: npx nthcase-agent@latest",
+	"bin": {
+		"nth-agent": "index.js"
+	},
+	"files": [
+		"index.js",
+		"README.md"
+	],
+	"license": "UNLICENSED"
+}
