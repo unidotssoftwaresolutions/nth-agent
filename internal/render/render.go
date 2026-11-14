@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/liveview"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
@@ -136,6 +137,10 @@ func Styled(w io.Writer, m ui.Mode, outcomes []inventory.Outcome, liveView LiveV
 	}
 	var rows [][]ui.Cell
 	var views, problems []string
+	// TEXT FROM OUTSIDE IS MADE FIT FOR A TERMINAL FIRST (WHAT_A_LEASE_CAN_ASK): a phone's name, id, OS and state are the
+	// phone's or its tool's words, and an escape code in one would drive the reader's terminal. one is for a value that
+	// stands in a cell or a sentence; text keeps its own line breaks.
+	one, text := farm.OneLineForTerminal, farm.ForTerminal
 	for _, o := range outcomes {
 		platform := PlatformName(o.Platform())
 		switch {
@@ -144,8 +149,8 @@ func Styled(w io.Writer, m ui.Mode, outcomes []inventory.Outcome, liveView LiveV
 		case o.IsNotAsked():
 			say(m.Marked(ui.MarkNote, platform+": not checked on this host (the probe is switched off — this is not a report about your devices).", m.Dim, width)...)
 		case o.IsCouldNotAsk():
-			problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelStop, What: platform + ": could not check — " + o.Reason(),
-				Why: "No " + platform + " phone on this machine can be listed or offered until this is fixed.", Do: o.Remedy()}, width, false)...)
+			problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelStop, What: platform + ": could not check — " + text(o.Reason()),
+				Why: "No " + platform + " phone on this machine can be listed or offered until this is fixed.", Do: text(o.Remedy())}, width, false)...)
 			say(m.Marked(ui.MarkStop, platform+": could not check", m.Stop, width)...)
 		case len(o.Offerable()) == 0 && len(o.Unusable()) == 0 && len(o.LeftOut()) == 0:
 			say(m.Marked(ui.MarkNote, platform+": no devices attached (checked — this is an answer, not a failure).", m.Dim, width)...)
@@ -156,46 +161,46 @@ func Styled(w io.Writer, m ui.Mode, outcomes []inventory.Outcome, liveView LiveV
 			}
 			say(m.Marked(mark, fmt.Sprintf("%s: %d usable, %d attached but unusable", platform, len(o.Offerable()), len(o.Unusable())), nil, width)...)
 			for _, d := range o.Offerable() {
-				name, kind := deviceName(d.Model, d.ID), platform
+				name, kind := deviceName(one(d.Model), one(d.ID)), platform
 				if d.Emulator {
 					// AN EMULATOR ON THIS MACHINE is offered like a phone on the cable, and said to be one: its virtual
 					// device's name, and "emulator" beside the platform.
 					kind = platform + " emulator"
-					if d.AVD != "" {
-						name = d.AVD
+					if one(d.AVD) != "" {
+						name = one(d.AVD)
 					}
 				}
-				rows = append(rows, []ui.Cell{{Text: name}, {Text: kind}, {Text: orDash(d.OsVersion)}, {Text: "ready to offer", Paint: m.Good}})
+				rows = append(rows, []ui.Cell{{Text: name}, {Text: kind}, {Text: orDash(one(d.OsVersion))}, {Text: "ready to offer", Paint: m.Good}})
 				if liveView == nil {
 					continue
 				}
 				judged := liveView(o.Platform(), d.ID)
 				if judged.Available || judged.Remedy == "" {
 					views = append(views, name)
-					views = append(views, m.Indented("  ", "live view: "+judged.Line(), m.Dim, width)...)
+					views = append(views, m.Indented("  ", "live view: "+text(judged.Line()), m.Dim, width)...)
 					continue
 				}
 				// A LIVE VIEW THAT CANNOT OPEN is a problem like any other: what, why, and what to do on this system.
-				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: name + ": no live view — " + judged.Reason,
-					Why: "Runs on it are still driven; nobody can watch them live.", Do: judged.Remedy}, width, false)...)
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: name + ": no live view — " + text(judged.Reason),
+					Why: "Runs on it are still driven; nobody can watch them live.", Do: text(judged.Remedy)}, width, false)...)
 			}
 			for _, u := range o.Unusable() {
-				rows = append(rows, []ui.Cell{{Text: deviceName("", u.ID)}, {Text: platform}, {Text: "—"}, {Text: "left out: " + u.State, Paint: m.Stop}})
-				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelStop, What: fmt.Sprintf("%s phone %s is %s", platform, u.ID, u.State),
-					Why: "It is not offered for runs until you do this.", Do: u.Remedy}, width, false)...)
+				rows = append(rows, []ui.Cell{{Text: deviceName("", one(u.ID))}, {Text: platform}, {Text: "—"}, {Text: "left out: " + one(u.State), Paint: m.Stop}})
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelStop, What: fmt.Sprintf("%s phone %s is %s", platform, one(u.ID), one(u.State)),
+					Why: "It is not offered for runs until you do this.", Do: text(u.Remedy)}, width, false)...)
 			}
 			// NOT ON THE CABLE (A_MACHINE_THAT_STAYS_THE_CUSTOMERS, decision 1): seen, ready, and not offered.
 			for _, d := range o.LeftOut() {
-				rows = append(rows, []ui.Cell{{Text: deviceName("", d.ID)}, {Text: platform}, {Text: "—"}, {Text: "left out: not on a USB cable", Paint: m.Look}})
-				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s phone %s is %s", platform, d.ID, d.How),
+				rows = append(rows, []ui.Cell{{Text: deviceName("", one(d.ID))}, {Text: platform}, {Text: "—"}, {Text: "left out: not on a USB cable", Paint: m.Look}})
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: fmt.Sprintf("%s phone %s is %s", platform, one(d.ID), one(d.How)),
 					Why: "The agent offers phones on a USB cable and the emulators on this machine, so this one is left out.",
 					Do:  "connect it by USB cable, or offer it too: start connect with " + inventory.OfferUncabledFlag}, width, false)...)
 			}
 			// The platform ANSWERED and still has something it could not establish. Worded as a note, never as a failure: a
 			// reader must be able to tell "I could not check" from "I checked, and here is what my answer does not cover".
 			if o.HasCaveat() {
-				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: platform + ": this answer does not cover: " + o.Reason(),
-					Why: "The phones above are listed; this is what the listing could not tell.", Do: "check by hand: " + o.Remedy()}, width, false)...)
+				problems = append(problems, m.Problem(ui.Problem{Level: ui.LevelLook, What: platform + ": this answer does not cover: " + text(o.Reason()),
+					Why: "The phones above are listed; this is what the listing could not tell.", Do: "check by hand: " + text(o.Remedy())}, width, false)...)
 			}
 		}
 	}

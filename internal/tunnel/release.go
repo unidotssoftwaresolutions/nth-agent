@@ -108,7 +108,7 @@ func (t *Tunnel) remember(id string, dest destination, createBody []byte) {
 
 // forget drops a session the client ended itself, and the builds held for it. The entry is the gate the release fires through, so dropping it here is also what makes a double release impossible — see releaseIfSilent.
 func (t *Tunnel) forget(id string) {
-	t.dropBuilds(id)
+	t.sessionEnded(id)
 	if value, ok := t.sessions.LoadAndDelete(id); ok {
 		entry := value.(*sessionEntry)
 		entry.mu.Lock()
@@ -180,7 +180,7 @@ func (t *Tunnel) releaseIfSilent(id string) {
 		return
 	}
 	t.release(id, entry, silent, bound)
-	t.dropBuilds(id) // the lease is over, whatever Appium answered: its build goes (builds.go)
+	t.sessionEnded(id) // the lease is over, whatever Appium answered: its build goes, and its mirrors end (mirrors.go)
 }
 
 // release sends the DELETE and says what it did.

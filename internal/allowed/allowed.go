@@ -49,6 +49,9 @@ const (
 	thePhone            // a phone this agent offers right now
 	theBuild            // an https address on the farm's own host
 	onlyFalse           // false: asks for nothing
+	aLanguage           // a language or a locale, in the shape one has (what_a_lease_can_ask.go)
+	aPackage            // an Android app's package name
+	anActivity          // an Android activity's name
 )
 
 // Capability is one entry of the allow-list: its name without the `appium:` prefix (both spellings are read), the kind of
@@ -68,12 +71,12 @@ var Capabilities = []Capability{
 	{"platformVersion", "the phone's OS version, which the driver checks against the phone", aString},
 	{"deviceName", "a label for the phone; the udid, which every set must carry, is what picks it", aString},
 	{"orientation", "which way up the session starts", oneOrientation},
-	{"language", "the language the phone is set to for the session", aString},
-	{"locale", "the region the phone is set to for the session", aString},
+	{"language", "the language the phone is set to for the session", aLanguage},
+	{"locale", "the region the phone is set to for the session", aLanguage},
 	{"skipSyncUiDialogTranslation", "whether the driver waits for a language change to reach the phone's dialogs", aBool},
 	{"app", "the build to install: an https address on the farm's own host, and nothing else", theBuild},
-	{"appPackage", "the app on the phone to start, when the build is already installed", aString},
-	{"appActivity", "the screen of that app to start", aString},
+	{"appPackage", "the app on the phone to start, when the build is already installed", aPackage},
+	{"appActivity", "the screen of that app to start", anActivity},
 	{"appWaitActivity", "which screen counts as the app having started", aString},
 	{"bundleId", "the app on the phone to start, on iOS", aString},
 	{"autoLaunch", "whether the driver starts the app itself", aBool},
@@ -245,9 +248,16 @@ func create(body []byte, farmURL string, phones *Phones, own func(string) bool) 
 	return ""
 }
 
-// judgeSet judges one set of capabilities Appium could start the session from, with its appium:options read in.
+// judgeSet judges one set of capabilities Appium could start the session from, with its appium:options read in. Every value
+// is judged, the set's own and those inside its appium:options, and a name given both ways is refused: Appium reads one of
+// the two, and which one is not this agent's to guess.
 func judgeSet(set map[string]any, farmURL string, phones *Phones, own func(string) bool) string {
-	entries := map[string]any{}
+	type entry struct {
+		key       string
+		value     any
+		inOptions bool
+	}
+	var entries []entry
 	for key, value := range set {
 		if key == "appium:options" {
 			options, ok := value.(map[string]any)
@@ -258,20 +268,21 @@ func judgeSet(set map[string]any, farmURL string, phones *Phones, own func(strin
 				if inner == "appium:options" {
 					return "the farm asked to start a session with appium:options inside appium:options — " + nothingSent
 				}
-				entries[inner] = v
+				entries = append(entries, entry{inner, v, true})
 			}
 			continue
 		}
-		entries[key] = value
+		entries = append(entries, entry{key, value, false})
 	}
-	names := make([]string, 0, len(entries))
-	for key := range entries {
-		names = append(names, key)
-	}
-	sort.Strings(names)
+	sort.Slice(entries, func(a, b int) bool {
+		if entries[a].key != entries[b].key {
+			return entries[a].key < entries[b].key
+		}
+		return !entries[a].inOptions && entries[b].inOptions
+	})
 	namedAPhone := false
-	for _, key := range names {
-		value := entries[key]
+	for _, e := range entries {
+		key, value := e.key, e.value
 		name := strings.TrimPrefix(key, "appium:")
 		if what, never := neverPassed[strings.ToLower(name)]; never {
 			return fmt.Sprintf("the farm asked the Appium on this machine for %s, which names %s — this agent never passes "+
@@ -287,6 +298,18 @@ func judgeSet(set map[string]any, farmURL string, phones *Phones, own func(strin
 		}
 		if c.kind == thePhone {
 			namedAPhone = true
+		}
+	}
+	given := map[string]bool{}
+	for _, e := range entries {
+		if !e.inOptions {
+			given[strings.TrimPrefix(e.key, "appium:")] = true
+		}
+	}
+	for _, e := range entries {
+		if name := strings.TrimPrefix(e.key, "appium:"); e.inOptions && given[name] {
+			return fmt.Sprintf("the farm asked to start a session naming %s both in a set of capabilities and inside its "+
+				"appium:options — Appium reads one of the two, and this agent cannot tell which — %s", safe(name), nothingSent)
 		}
 	}
 	if !namedAPhone {
@@ -365,6 +388,11 @@ func judgeValue(key string, c Capability, value any, farmURL string, phones *Pho
 	case theBuild:
 		address, _ := value.(string)
 		return judgeBuild(address, farmURL, own)
+	case aLanguage, aPackage, anActivity:
+		shape, words := shapeOf(c.kind)
+		if s, ok := value.(string); !ok || !shape.MatchString(s) {
+			return wrong(words)
+		}
 	}
 	return ""
 }
@@ -439,6 +467,8 @@ var runsOnThisComputer = map[string]string{
 	"listxctestbundles":             "runs a tool on this computer",
 	"simctl":                        "runs any simctl command on this computer",
 	"installcertificate":            "starts a web server on this computer to hand the phone a certificate",
+	"stopxctestscreenrecording":     "uploads a recording from this computer to any address",
+	"getappstrings":                 "reads a strings file at a path on this computer",
 }
 
 // MaxTreeDepth is the deepest tree a session may ask Appium to read (its snapshotMaxDepth setting): the runner refuses a
@@ -482,6 +512,9 @@ func inSession(method, path string, body []byte, farmURL string, own func(string
 			"program, or reads or writes files, on this computer rather than on the phone, so it was refused, and nothing " +
 			"was sent to Appium"
 	}
+	refused := func(what string) string {
+		return "the farm asked the Appium on this machine for " + what + " — so it was refused, and nothing was sent to Appium"
+	}
 	switch rest {
 	case "/appium/settings":
 		if strings.EqualFold(method, "POST") {
@@ -491,44 +524,64 @@ func inSession(method, path string, body []byte, farmURL string, own func(string
 		return refuse("execute_driver, a script Appium runs in its own process on this computer")
 	case "/appium/start_recording_screen", "/appium/stop_recording_screen":
 		return refuse("a screen recording (" + strings.TrimPrefix(rest, "/appium/") + "), which is made on this computer and can be uploaded from it to any address")
+	case "/appium/app/strings":
+		return refuse("an app's strings (app/strings), which Appium reads from a strings file at a path on this computer")
 	case "/se/log", "/log":
-		var ask struct {
-			Type string `json:"type"`
+		members, twice, ok := exactMembers(body)
+		if twice != "" {
+			return refused(twice)
 		}
-		if json.Unmarshal(body, &ask) != nil {
+		kind, _, isText := stringMember(members, "type")
+		if !ok || !isText {
 			return refuse("a log whose kind this agent cannot read")
 		}
-		if strings.EqualFold(strings.TrimSpace(ask.Type), "server") {
+		if strings.EqualFold(strings.TrimSpace(kind), "server") {
 			return refuse("Appium's own log on this computer, which holds other sessions' lines")
 		}
 	case "/appium/device/install_app":
-		var ask struct {
-			AppPath string `json:"appPath"`
+		members, twice, ok := exactMembers(body)
+		if twice != "" {
+			return refused(twice)
 		}
-		if json.Unmarshal(body, &ask) != nil {
+		appPath, _, isText := stringMember(members, "appPath")
+		if !ok || !isText {
 			return refuse("an install whose build this agent cannot read")
 		}
-		if refusal := judgeBuild(ask.AppPath, farmURL, own); refusal != "" {
+		if refusal := judgeBuild(appPath, farmURL, own); refusal != "" {
 			return refusal
 		}
 	case "/execute/sync", "/execute/async", "/execute", "/execute_async":
-		var ask struct {
-			Script string `json:"script"`
-			Args   []any  `json:"args"`
+		members, twice, ok := exactMembers(body)
+		if twice != "" {
+			return refused(twice)
 		}
-		if json.Unmarshal(body, &ask) != nil {
+		script, _, isText := stringMember(members, "script")
+		var args []any
+		if raw, given := members["args"]; given && decodeNumbers(raw, &args) != nil {
+			isText = false
+		}
+		if !ok || !isText {
 			return refuse("a script this agent cannot read")
 		}
-		script := strings.TrimSpace(ask.Script)
-		if len(script) < len("mobile:") || !strings.EqualFold(script[:len("mobile:")], "mobile:") {
+		name, isMobile := mobileName(script)
+		if !isMobile {
 			return "" // JavaScript in a web view on the phone
 		}
-		command := strings.ToLower(strings.TrimSpace(script[len("mobile:"):]))
+		if !aCommandsName.MatchString(name) {
+			return refused(fmt.Sprintf("a mobile: command named %s, which holds characters no command's name has (a command "+
+				"is named with letters and digits only), so this agent cannot tell which command Appium would run", safe(strconv.Quote(name))))
+		}
+		command := strings.ToLower(name)
 		if what, ok := runsOnThisComputer[command]; ok {
-			return refuse(fmt.Sprintf("mobile: %s, which %s", safe(strings.TrimSpace(script[len("mobile:"):])), what))
+			return refuse(fmt.Sprintf("mobile: %s, which %s", safe(name), what))
+		}
+		if throughTheEmulatorsConsole[command] && moreThanOneLine(args) {
+			return refused(fmt.Sprintf("mobile: %s with a line break or another control character in what it says, which "+
+				"Appium writes to the emulator's console on this computer as one line, so it would start a second console "+
+				"command", safe(name)))
 		}
 		if installs[command] {
-			for _, address := range buildsNamedIn(ask.Args) {
+			for _, address := range buildsNamedIn(args) {
 				if refusal := judgeBuild(address, farmURL, own); refusal != "" {
 					return refusal
 				}

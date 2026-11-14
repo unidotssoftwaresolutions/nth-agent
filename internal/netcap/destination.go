@@ -106,10 +106,48 @@ func (p *Proxy) destinationControl(_, address string, _ syscall.RawConn) error {
 	}
 	refuses := p.opts.refuses
 	if refuses == nil {
-		refuses = isLocalDestination
+		refuses = func(ip net.IP) bool { return isLocalDestination(ip) || p.isThisMachine(ip) }
 	}
 	if refuses(net.ParseIP(host)) {
 		return errLocalDestination{}
 	}
 	return nil
+}
+
+// isThisMachine says whether ip — or the IPv4 address it carries, mapped, compatible or through NAT64 — is one this
+// machine's own interfaces carry right now (WHAT_A_LEASE_CAN_ASK): a public IPv4 on an interface, or a global IPv6
+// address, is this machine as surely as loopback is, and the system delivers a connection to it here. Read at each dial,
+// so an address the machine took after the capture started is refused too. When the addresses cannot be read, the dial
+// is refused: nothing is let through on the guess that it is not one of them.
+func (p *Proxy) isThisMachine(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	read := p.opts.ownAddresses
+	if read == nil {
+		read = net.InterfaceAddrs
+	}
+	addrs, err := read()
+	if err != nil {
+		return true
+	}
+	candidates := []net.IP{ip}
+	if len(ip) == net.IPv6len && ip.To4() == nil && (nat64.Contains(ip) || isZero(ip[:12])) {
+		candidates = append(candidates, net.IP(ip[12:16]))
+	}
+	for _, a := range addrs {
+		var own net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			own = v.IP
+		case *net.IPAddr:
+			own = v.IP
+		}
+		for _, c := range candidates {
+			if own != nil && own.Equal(c) {
+				return true
+			}
+		}
+	}
+	return false
 }

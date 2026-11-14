@@ -191,25 +191,25 @@ type Tunnel struct {
 	// no longer a bare destination).
 	// A session this tunnel did not create — after a restart, every session it had — has no entry and is
 	// refused rather than routed by a fact about the node.
-	sessions        sync.Map
-	lanes           atomic.Int64 // request lanes with a worker running, on every tunnel this agent has had (serveLane)
-	connected       atomic.Bool
-	saidDown        atomic.Bool // said "dropped"/"not connected yet" for the CURRENT outage (reset on connect)
-	saidWoken       atomic.Bool // said "the farm answered a heartbeat — dialling now" for the CURRENT outage (reset on connect)
-	everConnected   atomic.Bool // THREE STATES need two bits: never connected / established / reconnected
-	saidNoHar       atomic.Bool
-	saidRefused     string // the refused upgrade last said this outage, as status and sentence (sayRefused); Run's goroutine only
-	saidBadPull     atomic.Bool
-	saidNotAMirror  atomic.Bool
-	saidStreaming   atomic.Bool
-	saidNoCapture   atomic.Bool
-	saidNoBudget    atomic.Bool // said "this session declared no silence budget" (see release.go's arm)
-	saidQueueFull   atomic.Bool
-	saidUnrooted    atomic.Bool
-	saidSessionless atomic.Bool
-	saidRedirect    atomic.Bool
-	saidTooLarge    atomic.Bool
-	shelf           shelfState
+	sessions                   sync.Map
+	lanes                      atomic.Int64 // request lanes with a worker running, on every tunnel this agent has had (serveLane)
+	connected                  atomic.Bool
+	saidDown                   atomic.Bool // said "dropped"/"not connected yet" for the CURRENT outage (reset on connect)
+	saidWoken                  atomic.Bool // said "the farm answered a heartbeat — dialling now" for the CURRENT outage (reset on connect)
+	everConnected              atomic.Bool // THREE STATES need two bits: never connected / established / reconnected
+	saidNoHar                  atomic.Bool
+	saidRefused                string // the refused upgrade last said this outage, as status and sentence (sayRefused); Run's goroutine only
+	saidBadPull                atomic.Bool
+	saidNotAMirror             atomic.Bool
+	saidStreaming              atomic.Bool
+	saidNoCapture              atomic.Bool
+	saidNoBudget               atomic.Bool // said "this session declared no silence budget" (see release.go's arm)
+	saidQueueFull              atomic.Bool
+	saidUnrooted               atomic.Bool
+	saidSessionless            atomic.Bool
+	saidRedirect, saidTooLarge atomic.Bool
+	shelf                      shelfState
+	mirrors                    mirrorSet // which phone each session is on, and its mirrors (mirrors.go)
 }
 
 func New(cfg Config) *Tunnel {
@@ -1017,7 +1017,7 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 			// identifier in `appium:udid`; for a cloud row that is a spec. Nothing is guessed and nothing is
 			// hard-coded any more — a session whose lease named no cloud device is refused below.
 			spec, _ := browserstack.MergeSpecFrom(decoded)
-			merged, err := browserstack.Merge(decoded, t.cfg.BrowserStack, t.cfg.BrowserStackApp, spec)
+			merged, leftOut, err := browserstack.MergeLeavingOut(decoded, t.cfg.BrowserStack, t.cfg.BrowserStackApp, spec)
 			if err != nil {
 				// The refusal names the SHAPE, never the body and never the key. Forwarding an unmergeable
 				// body would send the session up unauthenticated and come back as "bad credentials", which is
@@ -1036,6 +1036,11 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 					t.say("the farm asked to start a session in a shape this agent does not recognise — it was refused rather than sent to BrowserStack without credentials\n")
 				}
 				return errorResponse(frame.ID, "Relay forward error: "+err.Error())
+			}
+			// …AND WHAT IS NOT ON THE LIST DOES NOT GO WITH THE CUSTOMER'S KEY (browserstack/vendor.go): named, and left out.
+			if len(leftOut) > 0 {
+				t.say(fmt.Sprintf("the farm's session for BrowserStack asked for %s on your account, which this agent does not "+
+					"send with your key — the session was started without them\n", namedForTerminal(leftOut)))
 			}
 			decoded = merged
 		}
@@ -1095,6 +1100,9 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 			// the entry remembers is the one the far side was actually asked for.
 			t.remember(id, dest, decoded)
 			t.holdBuilds(id, handed)
+			if dest == toLocal {
+				t.mirrors.sessionStarted(id, allowed.PhonesNamed(decoded))
+			}
 		}
 	}
 	// …and forgotten when the session is deleted, whatever the endpoint answered: a DELETE is the client saying

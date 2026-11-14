@@ -107,8 +107,10 @@ func TestEveryRestartLineRunsThisReleaseHoweverTheAgentWasStarted(t *testing.T) 
 			"run Appium on this machine, on its own address (appium --address 127.0.0.1), and pass that address: npx nthcase-agent connect --appium http://127.0.0.1:4723",
 			false, doctor.AppiumNotHereRemedy},
 		{"upload (cmd/nth-agent/uploadcmd.go)",
+			// AMENDED (what a lease can ask): the export line quotes the id, which is the hub's text, so a pasted line runs
+			// nothing after it. WAS: "  export NTH_AGENT_BROWSERSTACK_APP=bs://f1e2d3c4\n".
 			"uploaded: bs://f1e2d3c4\n\nUse it with connect:\n  npx nthcase-agent connect --farm https://... --browserstack-app bs://f1e2d3c4\n" +
-				"or export it once:\n  export NTH_AGENT_BROWSERSTACK_APP=bs://f1e2d3c4\n\nBrowserStack deletes uploaded builds after 30 days, so this id stops working then.\n",
+				"or export it once:\n  export NTH_AGENT_BROWSERSTACK_APP='bs://f1e2d3c4'\n\nBrowserStack deletes uploaded builds after 30 days, so this id stops working then.\n",
 			false, uploaded},
 	}
 	for _, way := range everyWayToStart {

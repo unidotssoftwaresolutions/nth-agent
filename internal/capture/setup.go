@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/command"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/liveview"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 )
@@ -73,6 +74,9 @@ func Setup(ctx context.Context, o SetupOptions) int {
 	if o.PortFree == nil {
 		o.PortFree = liveview.LoopbackFree
 	}
+	// WHAT SETUP PRINTS IS MADE FIT FOR A TERMINAL (WHAT_A_LEASE_CAN_ASK): it names the phone by its own model and says what
+	// adb said, and either may hold an escape code.
+	o.Out = farm.TerminalWriter(o.Out)
 	if o.PeerCheck == nil {
 		o.PeerCheck = netcap.PeerCheckWorks
 	}

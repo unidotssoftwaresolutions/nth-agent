@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/android"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/localconn"
 )
 
@@ -131,7 +132,7 @@ func adbCouldNotReach(exit int, stderr string) bool {
 
 // adbFailure names a failed adb command in a sentence: its exit code and what it said, on one line.
 func adbFailure(exit int, stderr string) string {
-	said := strings.Join(strings.Fields(stderr), " ")
+	said := farm.OneLineForTerminal(stderr) // adb's own words, on one line and fit for a terminal
 	if len(said) > 160 {
 		said = said[:160] + "…"
 	}

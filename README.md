@@ -235,7 +235,7 @@ start is refused, and so is one whose path could point anywhere but your `--appi
   refused until it is added to that list on purpose;
 - the phone it names (`appium:udid`), in every set of capabilities Appium could start it from, is one this agent offers
   right now. A phone you left out with `--skip`, a phone on Wi-Fi or an emulator it does not offer, and a create that
-  names no phone (Appium would pick one itself) are refused;
+  names no phone (Appium would pick one itself) are refused, and so is a capability named both in a set and inside its `appium:options`;
 - the build it installs, if it names one (`app`), is an `https` address on the farm's own host — the one you gave
   `--farm`. A path on this machine, another host or plain `http` is refused, and so is such a build installed later
   in the session.
@@ -246,12 +246,12 @@ start is refused, and so is one whose path could point anywhere but your `--appi
   `appium:chromedriverExecutableDir`, `appium:webDriverAgentUrl`, `appium:derivedDataPath`, `appium:prebuiltWDAPath`,
   `appium:keychainPath` and `appium:keychainPassword`;
 - inside a session, whatever runs a program, or reads or writes files, on this computer rather than on the phone:
-  `execute_driver`, `mobile: shell`, an emulator's console (`mobile: execEmuConsoleCommand`), screen and audio
-  recordings and screen streams that Appium makes or uploads from this computer, `xctrace`, XCTest bundles run from
-  here, `mobile: simctl`, a certificate served from here, and Appium's own server log;
+  `execute_driver`, `mobile: shell`, an emulator's console (`mobile: execEmuConsoleCommand`, and a line break in what `mobile: sendSms`, `sensorSet` and their like write to it), screen and audio
+  recordings and screen streams that Appium makes or uploads from this computer (XCTest's own among them), `xctrace`, XCTest bundles run from
+  here, `mobile: simctl`, an app's strings read from a file here, a certificate served from here, and Appium's own server log;
 - registering a phone with your Apple developer team (`appium:allowProvisioningDeviceRegistration`). That is the yes
   `npx {{PACKAGE}}@latest setup-ios` asks you for, at this machine;
-- a live view of anything but a phone's own screen server, at the address this machine reserved for it.
+- a live view of anything but a phone's own screen server, at the address this machine reserved for it; and a live view ends when the session on its phone ends.
 
 Each refusal is a sentence in your terminal and an error the farm gets back, and nothing is sent to Appium. A redirect
 from BrowserStack's hub is not followed. An answer too large for one message to your workspace is answered with an
@@ -280,7 +280,7 @@ BrowserStack key is never sent to us.
 
 **Network capture records a phone's traffic, and only you can turn it on.** It needs three yeses, each from a person
 — this machine, each phone, and the scenario (*Network capture*, below). The farm can start and stop a capture only on a
-phone a person set up, on a machine where a person turned capture on. While a capture run lasts, every app's traffic on
+phone a person set up, that `connect` offers, on a machine where a person turned capture on. While a capture run lasts, every app's traffic on
 that phone goes through a proxy on this machine; what is recorded is masked here, and stays here until the farm asks
 for that run's file.
 
@@ -389,7 +389,7 @@ network. Use a phone kept for testing, not your daily one.
 
 **A capture keeps to the internet.** While capture is on, the proxy refuses to connect to this machine and its local
 network: loopback, link-local addresses (the cloud metadata address `169.254.169.254` among them), private and
-unique-local ranges, and carrier-grade NAT, over IPv4 and IPv6. It judges the address it actually dials, after the
+unique-local ranges, carrier-grade NAT, and every address this machine's own network interfaces carry (a public one too), over IPv4 and IPv6. It judges the address it actually dials, after the
 name is resolved, so a name or a redirect that leads there is refused too. A refused request is in the capture with
 the reason, and the phone gets the same answer: *"refused: the capture proxy does not connect to this machine or its
 local network — to let a capture reach a local backend, restart with npx {{PACKAGE}}@latest connect …

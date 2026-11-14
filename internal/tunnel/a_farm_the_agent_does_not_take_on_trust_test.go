@@ -545,6 +545,10 @@ func TestEveryFrameTodaysFarmSendsStillPasses(t *testing.T) {
 		c.AppiumURL = appiumServer.URL
 		c.Mirrors = offering(mirror.port)
 		c.Capture = capture
+		// AMENDED (what a lease can ask): the phone today's farm captures on, and whose mirror it opens, is offered, as
+		// connect offers a phone and its mirror from the same row; a capture-start now touches only a phone on offer.
+		// WAS: the mirror's phone R5CT30ABCDE had a mirror on offer but was not among the offered phones (fixturePhones).
+		offeringPhones(c, append([]string{"R5CT30ABCDE"}, fixturePhones...)...)
 	})
 	conn := farm.next(t)
 	reader := readFarmSide(conn)

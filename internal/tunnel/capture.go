@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/capture"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 )
 
@@ -78,6 +80,13 @@ func (l *link) captureControl(kind string, data []byte) {
 	}
 	switch kind {
 	case "capture-start":
+		// …ONLY ON A PHONE THIS AGENT OFFERS RIGHT NOW, as a session's create is (internal/allowed): a phone left out with
+		// --skip, one on Wi-Fi, or one never offered is not proxied or recorded, whoever asks.
+		if !l.t.cfg.Phones.Offers(frame.Serial) {
+			l.t.say(fmt.Sprintf("the farm asked to record the network traffic of phone %s, which this agent does not offer "+
+				"right now — only a phone `connect` offers can be captured, so nothing was started on it\n", farm.SafeForTerminal(frame.Serial, "")))
+			return
+		}
 		go l.t.cfg.Capture.Start(l.agent, frame.LeaseID, frame.Serial)
 	case "capture-stop":
 		go l.t.cfg.Capture.Stop(l.agent, frame.LeaseID)
@@ -114,6 +123,16 @@ func (l *link) answerHandback(frame requestFrame) {
 	}
 	if !ok || !capture.IsAdbSerial(ask.Udid) || !netcap.IsLease(strings.ToLower(ask.LeaseID)) {
 		reply(400, map[string]string{"failure": "A capture handback was asked for without a phone and the lease that captured on it."})
+		return
+	}
+	// A PHONE THIS AGENT DOES NOT OFFER is not asked about: no adb runs on it, and the answer is the same whether it is
+	// attached or not. Its records here are handed back by this machine's own pass (capture.Controller.Run).
+	if !l.t.cfg.Phones.Offers(ask.Udid) {
+		reply(200, struct {
+			Clean       bool   `json:"clean"`
+			Observation string `json:"observation"`
+		}{false, "this machine does not offer this phone right now, so it ran nothing on it and says nothing about it; " +
+			"it is answered once the phone is offered"})
 		return
 	}
 	clean, observation := l.t.cfg.Capture.HandBackForFarm(l.agent, ask.Udid, ask.LeaseID)

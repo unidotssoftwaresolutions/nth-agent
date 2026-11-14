@@ -230,7 +230,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runSetupIos(inv, stdin, stdout, stderr, execRunner)
 	}
 	if inv.Verb == "upload" {
-		return runUpload(inv, stdout, stderr)
+		return runUpload(inv, farm.TerminalWriter(stdout), farm.TerminalWriter(stderr)) // the hub's words, fit for a terminal
 	}
 	if inv.Verb == "connect" {
 		return runConnect(inv, stdout, stderr)

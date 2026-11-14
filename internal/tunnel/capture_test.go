@@ -84,6 +84,10 @@ func captureTunnel(t *testing.T, capture *fakeCapture) (*farmReader, func(any), 
 	liveTunnel(t, farm.server.URL, out, func(c *tunnel.Config) {
 		c.AppiumURL = appium.URL
 		c.Capture = capture
+		// AMENDED (what a lease can ask): a capture-start and a handback question now touch only a phone this agent offers
+		// right now, so the phone these seals capture on is offered, as connect offers a phone on its cable.
+		// WAS: the agent offered the older seals' phones only (liveTunnel's fixturePhones), and R5CT30ABCDE was not among them.
+		offeringPhones(c, append([]string{"R5CT30ABCDE"}, fixturePhones...)...)
 	})
 	conn := farm.next(t)
 	return readFarmSide(conn), func(frame any) { send(t, conn, frame) }, hits, out

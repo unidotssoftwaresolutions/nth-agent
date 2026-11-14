@@ -25,6 +25,8 @@ const (
 	UnknownPacking
 	TooLarge
 	Unreadable
+	// HoldsOtherThanItSays: a file unpacks to other bytes than the list says — another size, or another checksum.
+	HoldsOtherThanItSays
 )
 
 // Sentence is what a person reads about the fault: plain, and naming no setting. Those the farm's unpacker also says are its
@@ -49,6 +51,8 @@ func (f Fault) Sentence() string {
 		return "it unpacks to more than 1 GiB"
 	case Unreadable:
 		return "this agent could not read back the file it wrote"
+	case HoldsOtherThanItSays:
+		return "a file in it unpacks to other than the archive says it holds"
 	}
 	return ""
 }
@@ -61,13 +65,14 @@ func (f Fault) Sentence() string {
 //   - The list walked to the size that record gives, one more entry looked for past it, and no more than MaxEntries.
 //   - Every name inside the app: none empty, none holding a NUL or a backslash, none starting at "/" or with a drive, no ".."
 //     part — and no name twice, compared without case, a folder's trailing "/" left out.
-//   - Only stored or deflated files, none encrypted, and at most MaxUnpackedBytes declared in all.
+//   - Only stored or deflated files, none encrypted, and at most MaxUnpackedBytes declared in all, each checked before it is added.
 //   - No file the list does not name: every listed file's own header starts exactly where the one before it ends (its data,
 //     and its descriptor when it has one), the first at the archive's first byte and the last ending where the list begins,
 //     and says what the list says of it — its name, its packing, its checksum and its sizes.
 //
-// What is not done is what needs unpacking: the real bytes are never inflated here. The phone unpacks the build, not this
-// computer; the count is what keeps an archive that lies about itself from reaching Appium at all.
+// And each file holds what the list says of it: unpacked on the way into nothing — never written — it is exactly its declared
+// size, with its checksum (unpacked.go). The phone unpacks the build; the count is what keeps an archive that lies about
+// itself from reaching Appium at all, or anything on this computer that reads a file out of it.
 func Count(path, kind string) Fault {
 	file, err := os.Open(path)
 	if err != nil {
@@ -142,10 +147,11 @@ func count(r io.ReaderAt, length int64, apk bool) Fault {
 		if e.declared < 0 || e.packed < 0 {
 			return NotAZip
 		}
-		declared += e.declared
-		if declared > MaxUnpackedBytes {
+		// CHECKED BEFORE IT IS ADDED (WHAT_A_LEASE_CAN_ASK): a ZIP64 size near 2^63 added first wrapped the total below zero.
+		if e.declared > MaxUnpackedBytes-declared {
 			return TooLarge
 		}
+		declared += e.declared
 	}
 
 	// Every listed file's own header, in the order they lie: each starts where the one before ends.
@@ -163,6 +169,9 @@ func count(r io.ReaderAt, length int64, apk bool) Fault {
 		at, descriptor, ok := localData(r, length, e)
 		if !ok {
 			return UnlistedEntry
+		}
+		if !holdsWhatItSays(r, at, e) {
+			return HoldsOtherThanItSays
 		}
 		expected = at + e.packed + descriptor
 	}

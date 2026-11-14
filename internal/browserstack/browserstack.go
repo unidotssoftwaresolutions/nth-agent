@@ -195,17 +195,24 @@ func IsSessionCreate(method, path string) bool {
 // (JSONWP) spelling; in a W3C body a bare dotted name is not a valid extension capability at all, so writing it
 // there risks the whole session being rejected for an invalid capability. One dialect, one spelling.
 func Merge(body []byte, creds Credentials, app string, spec DeviceSpec) ([]byte, error) {
+	merged, _, err := MergeLeavingOut(body, creds, app, spec)
+	return merged, err
+}
+
+// MergeLeavingOut is Merge, and also says which capabilities of the body it left out (vendor.go): the tunnel names them on
+// the customer's terminal.
+func MergeLeavingOut(body []byte, creds Credentials, app string, spec DeviceSpec) ([]byte, []string, error) {
 	if !creds.Configured() {
-		return nil, errors.New("browserstack: refusing to merge without both a user and a key")
+		return nil, nil, errors.New("browserstack: refusing to merge without both a user and a key")
 	}
 	var root map[string]any
 	if err := json.Unmarshal(body, &root); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnrecognisedBody, err)
+		return nil, nil, fmt.Errorf("%w: %v", ErrUnrecognisedBody, err)
 	}
 
 	capabilities, ok := root["capabilities"].(map[string]any)
 	if !ok {
-		return nil, ErrUnrecognisedBody
+		return nil, nil, ErrUnrecognisedBody
 	}
 
 	// ⚠️ THE SHAPE IS CHECKED FIRST, AND THE ORDER IS A DECISION. These two refusals used to run before the body
@@ -216,11 +223,11 @@ func Merge(body []byte, creds Credentials, app string, spec DeviceSpec) ([]byte,
 		// REFUSING BEATS GUESSING, and there is nothing left to guess WITH: the constants that used to stand in
 		// here are gone. A session naming no device is one the hub refuses with a sentence about platforms and
 		// browsers, so it never leaves the machine.
-		return nil, ErrNoDeviceSpec
+		return nil, nil, ErrNoDeviceSpec
 	}
 	if MissingApp(creds, app) {
 		// REFUSING BEATS FORWARDING, for the same reason. A session with no build is not one that might work.
-		return nil, fmt.Errorf("%w: %s", ErrNoApp, MissingAppMessage)
+		return nil, nil, fmt.Errorf("%w: %s", ErrNoApp, MissingAppMessage)
 	}
 
 	// ── THE RULE, AND IT IS ONE RULE WITH THREE PARTS ──────────────────────────────────────────────────────
@@ -246,16 +253,18 @@ func Merge(body []byte, creds Credentials, app string, spec DeviceSpec) ([]byte,
 	// one announced itself to nobody, ever. Only the write may be conditional.
 	sets, targets := capabilitySets(capabilities)
 	if len(sets) == 0 {
-		return nil, ErrUnrecognisedBody
+		return nil, nil, ErrUnrecognisedBody
 	}
 	// (4) READ BEFORE THE STRIP. The platform's neutral block is the only thing here that has to be READ rather
 	// than written, so it is taken from whichever set carries it — the client puts it in a `firstMatch` entry
 	// today, and a body with an `alwaysMatch` would carry it there instead. Reading only the target set would
 	// have worked for exactly one of those shapes.
 	facts := readRunFacts(sets)
+	var leftOut []string
 	for i, set := range sets {
-		delete(set, LocalSerialCapability)   // (1) — every set, no condition
-		delete(set, PlatformFactsCapability) // (4) — every set, no condition, for its own reason
+		delete(set, LocalSerialCapability)                      // (1) — every set, no condition
+		delete(set, PlatformFactsCapability)                    // (4) — every set, no condition, for its own reason
+		leftOut = append(leftOut, leaveOut(set, targets[i])...) // (5) — every set: what is not on the list (vendor.go)
 		if !targets[i] {
 			for _, key := range ourKeys() { // (3)
 				delete(set, key)
@@ -268,7 +277,8 @@ func Merge(body []byte, creds Credentials, app string, spec DeviceSpec) ([]byte,
 		}
 	}
 
-	return json.Marshal(root)
+	merged, err := json.Marshal(root)
+	return merged, named(leftOut), err
 }
 
 // PlatformFactsCapability is the platform's own vendor-neutral block: which run this is, which way up the device

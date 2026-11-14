@@ -8,6 +8,7 @@ import (
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/capture"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/command"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 )
 
@@ -38,6 +39,7 @@ const wrapWidth = ui.ReportWidth
 // NOTHING IS SILENTLY WITHHELD: a green check's caveat and every check's reason move behind --why, and the count line
 // names them (writeWithheldCount).
 func Human(w io.Writer, r Report, opts Options) error {
+	r = fitForTerminal(r)
 	m, width := opts.Mode, opts.Mode.Report()
 	var b strings.Builder
 	say := func(lines ...string) {
@@ -287,4 +289,27 @@ func ExitCode(r Report) int {
 		return 1
 	}
 	return 0
+}
+
+// fitForTerminal is r with every observed value made fit for a terminal (WHAT_A_LEASE_CAN_ASK): a check's detail holds a
+// phone's id and its tool's own word for its state, and the capture lines a phone's model as the phone gave it, and an
+// escape code in any of them would drive the reader's terminal. Each keeps its own line breaks; --json is left as it is,
+// escaped by its encoder.
+func fitForTerminal(r Report) Report {
+	checks := make([]Check, len(r.Checks))
+	for i, c := range r.Checks {
+		c.Name, c.Detail, c.Remedy = farm.ForTerminal(c.Name), farm.ForTerminal(c.Detail), farm.ForTerminal(c.Remedy)
+		c.Limits, c.Need = farm.ForTerminal(c.Limits), farm.ForTerminal(c.Need)
+		checks[i] = c
+	}
+	r.Checks = checks
+	if r.Capture != nil {
+		status := *r.Capture
+		status.Lines = make([]string, len(r.Capture.Lines))
+		for i, line := range r.Capture.Lines {
+			status.Lines[i] = farm.ForTerminal(line)
+		}
+		r.Capture = &status
+	}
+	return r
 }

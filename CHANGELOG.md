@@ -4,6 +4,48 @@ What changed in each release of nth-agent, newest first. Each heading is a versi
 notes are its section here. A command is named here by what you type after the package's name, `capture enable` for
 example: run it through `npx` with that name in front, the way the README shows.
 
+## 0.5.7
+
+- **A request is read the way Appium reads it.** Inside a session, the agent read a request's body by Go's rules, which take
+  a member's name in any letters and keep the last one, while Appium takes the exact name; and it trimmed a `mobile:`
+  script by Go's idea of white space, which leaves out a character JavaScript trims. Either way a request could show the
+  agent one command and Appium another. A body that names a member twice, or in two spellings that differ only in their
+  letters, is now refused, a script is trimmed as the drivers trim it, and a command whose name holds anything but
+  letters and digits is refused.
+- **Two more things that work on this computer are refused.** The upload of an iPhone screen recording that XCTest made
+  (`mobile: stopXCTestScreenRecording`), which Appium sends from this computer to any address, and an app's strings
+  (`getStrings`, `mobile: getAppStrings`), which Appium reads from a file here. The farm's runner sends neither.
+- **An emulator's console gets one line.** Appium writes what `mobile: sendSms`, `gsmCall`, `sensorSet` and their like say
+  to the emulator's console on this computer as one line, so a line break in it would have started a second console
+  command. One with a line break or another control character in it is refused. The runner's shake still passes.
+- **A session's create is held to its shapes.** `language`, `locale`, `appPackage` and `appActivity` must have the shape
+  their kind of value has (`sv_SE`, `com.example.app`, `.MainActivity`): a driver may put them in a shell command on the
+  phone. A capability named both in a set and inside its `appium:options` is refused, since Appium reads one of the two
+  and the agent judged only one; both values are judged now.
+- **BrowserStack gets only the options the agent sends.** A cloud session's `bstack:options` is built from what the agent
+  writes and a few labels (`projectName`, `buildName`, `buildTag`, `sessionName`, `appiumVersion`,
+  `deviceOrientation`). Anything else a farm's create asked for with your key — BrowserStack Local, other apps, uploaded
+  media, logging options, the older `browserstack.*` names — is left out and named in your terminal, and the session
+  starts without it.
+- **Capture only on a phone the agent offers.** The farm could start a capture, or ask whether a phone was handed back, on
+  any phone set up for capture, even one you left out with `--skip`. Both now need a phone `connect` offers right now;
+  for any other, nothing runs and nothing is said about it.
+- **A live view ends with its session.** A phone's live view used to go on until the farm cancelled it, so a viewer from
+  one lease could keep watching the phone into the next. It now ends when the session on that phone ends, and the next
+  session's view is opened afresh.
+- **A capture does not reach this computer by its public address.** The capture proxy refused loopback and the local
+  ranges, but not a public IPv4 address or a global IPv6 address on this computer's own interfaces, and the system
+  delivers a connection to one of those here. It now refuses every address this computer's interfaces carry, read when it
+  connects.
+- **What a phone or BrowserStack says is printed safely.** `devices`, `doctor`, `capture setup`, `capture status` and
+  `upload` printed a phone's name, adb's words and BrowserStack's answer as they came, so an escape code in one could
+  drive your terminal. They now go through the same filter as `connect`'s own lines. The `export` line `upload` prints
+  quotes the id, so a pasted line runs nothing after it.
+- **A build is checked for what it really holds.** The agent counted a build by the sizes its list declares; a file could
+  declare a kilobyte and unpack to a megabyte, and a size near 2^63 could wrap the total. Each file is now unpacked on the
+  way into nothing, never written, and must be exactly its declared size, with its checksum; the total is checked before
+  each file is added.
+
 ## 0.5.6
 
 - **Appium stays on your computer.** Appium listens on every address your computer has unless it is started with

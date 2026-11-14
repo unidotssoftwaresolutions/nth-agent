@@ -230,7 +230,11 @@ func (l *link) startStream(data []byte) {
 	if l.t.saidStreaming.CompareAndSwap(false, true) {
 		l.t.say("the farm opened a live view — this agent streams a phone's mirror from the port it reserved for that phone\n")
 	}
-	go l.pump(ctx, cancel, start, upstream, port, phone, gone)
+	done := l.t.mirrors.add(phone, cancel) // …and it ends with its phone's session (mirrors.go)
+	go func() {
+		defer done()
+		l.pump(ctx, cancel, start, upstream, port, phone, gone)
+	}()
 }
 
 // startPull answers a capture pull: refused in the farm's words when it names no lease or another lease's, else served
@@ -394,6 +398,9 @@ func (l *link) endFor(ctx context.Context, id string, status *int, failure strin
 		return
 	case errMirrorIdle:
 		l.sendEnd(id, nil, fmt.Sprintf("the phone's mirror sent nothing for %s, so its live view ended", l.t.streamIdle()))
+		return
+	case errSessionEnded:
+		l.sendEnd(id, nil, "the session on this phone ended, so its live view ended — a live view is opened for each session")
 		return
 	}
 	if ctx.Err() != nil && failure == "" && status == nil {

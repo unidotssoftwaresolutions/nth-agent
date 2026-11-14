@@ -132,6 +132,8 @@ func TestEveryReadOfTheTokenIsClassified(t *testing.T) {
 		// AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE: Windows' own word. A windows.Token is a PROCESS's access token, which
 		// names the account a process runs as; the workspace token is not in reach of this file.
 		"peer_windows.go": "internal/netcap on Windows: opens another process's ACCESS TOKEN (windows.Token, OpenProcessToken) only to read which account that process runs as; it never sees the workspace token and has no exit",
+		// EXTENDED (what a lease can ask): JSON's own word. encoding/json's Decoder.Token reads the next piece of a JSON text.
+		"what_a_lease_can_ask.go": "internal/allowed: walks a farm request's body piece by piece with encoding/json's Decoder.Token, only to find a member named twice; it never sees the workspace token and has no exit",
 	}
 
 	root := filepath.Join("..", "..")

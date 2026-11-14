@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/command"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 )
 
@@ -92,8 +93,8 @@ func ReadStatus(st Store, now time.Time) Status {
 		ps := PhoneStatus{Serial: p.Serial, Model: p.Model, SetUpUtc: p.SetUpAtUtc, ForThisCA: fingerprint != "" && p.CAFingerprint == fingerprint}
 		status.Phones = append(status.Phones, ps)
 		name := p.Serial
-		if p.Model != "" {
-			name += " (" + p.Model + ")"
+		if model := farm.OneLineForTerminal(p.Model); model != "" { // the phone's own words, fit for a terminal
+			name += " (" + model + ")"
 		}
 		if ps.ForThisCA {
 			status.Lines = append(status.Lines, fmt.Sprintf("  phone set up: %s — its browser trusted the capture certificate on %s", name, p.SetUpAtUtc.UTC().Format(time.DateOnly)))

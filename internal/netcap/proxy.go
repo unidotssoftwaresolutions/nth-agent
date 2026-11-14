@@ -83,9 +83,9 @@ type Options struct {
 	Refused func(uid int, found bool)
 	// ReachLocal lets the phone's traffic reach this machine and its local network — the customer's
 	// --capture-allow-local-network. False, the default, refuses them (destination.go).
-	ReachLocal bool
-	// refuses replaces the local rule — a TEST SEAM, unexported: no flag or variable reaches it.
-	refuses func(net.IP) bool
+	ReachLocal   bool
+	refuses      func(net.IP) bool          // replaces the local rule — a TEST SEAM, unexported: no flag or variable reaches it
+	ownAddresses func() ([]net.Addr, error) // replaces this machine's own interface addresses (net.InterfaceAddrs) — a TEST SEAM too
 }
 
 // Proxy is one capture's proxy.

@@ -241,11 +241,8 @@ func installPlacesIn(rest string, ask map[string]any) []place {
 
 // mobileCommand is the lower-case name of a `mobile:` script, or "" for any other script.
 func mobileCommand(script string) string {
-	script = strings.TrimSpace(script)
-	if len(script) < len("mobile:") || !strings.EqualFold(script[:len("mobile:")], "mobile:") {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(script[len("mobile:"):]))
+	name, _ := mobileName(script) // read as the judge reads it (what_a_lease_can_ask.go)
+	return strings.ToLower(name)
 }
 
 func decodeNumbers(body []byte, into any) error {
