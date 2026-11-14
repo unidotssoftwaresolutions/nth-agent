@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -22,8 +21,8 @@ import (
 // operator purge); it loses no data, because the truth lives in the cloud, not on this machine. The
 // agent stays disposable.
 func LoadOrCreateNodeID(configDir string) (string, error) {
-	dir := filepath.Join(configDir, "nth-agent")
-	path := filepath.Join(dir, "node-id")
+	dir := Folder(configDir)
+	path := NodeIDFile(configDir)
 
 	if data, err := os.ReadFile(path); err == nil {
 		id := strings.TrimSpace(string(data))

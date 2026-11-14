@@ -163,7 +163,7 @@ printf 'workspace agent token: ' && read -rs NTH_AGENT_TOKEN && echo && export N
 ```
 
 ```
-npx {{PACKAGE}}@latest connect --farm https://<your-farm-url> --appium http://127.0.0.1:4723 \
+npx {{PACKAGE}}@latest connect --appium http://127.0.0.1:4723 \
   --ios-team-id ABCDE12345 --ios-wda-bundle-id com.example.WebDriverAgentRunner
 ```
 
@@ -180,7 +180,7 @@ HISTORY FILE, which outlives the process, the terminal and the reboot. The secon
 *"prefer the variable"* on its own would be poor advice — hence the form above, which is neither. The
 token is never written to disk or into any output either way.
 
-`--farm` must be `https://` unless it is exactly `localhost` (in lower case) or a loopback address such as
+`--farm` is optional: without it, or `NTH_AGENT_FARM`, the agent connects to `https://farm.nthcase.com`. A farm you name must be `https://` unless it is exactly `localhost` (in lower case) or a loopback address such as
 `127.0.0.1`, and a plain-`http` farm is never reached through a proxy, nor sent anything when another account on this machine runs it. Without the two iOS flags your
 iPhones are reported as **attached and not offered**, with the reason — a phone we cannot sign for is a
 phone we will not pretend we can drive.
@@ -209,7 +209,7 @@ question the capture proxy asks (*On a machine other people log into*, below) �
 server and of each phone's screen server. A program another account runs, or one whose account the system will not
 name, is not used, and `connect` and `doctor` say so; root's is used on Linux and Windows, since root can already read everything of
 yours (not on a Mac, where root's launchd makes the socket any account's own agent asks for). The temporary forward to a phone's WebDriverAgent listens on this machine's loopback only, and lets in only
-this agent; the port declared for an iPhone's WebDriverAgent, and an emulator's two ports, are asked the same question.
+this agent; the port declared for an iPhone's WebDriverAgent, and an emulator's two ports, are asked the same question. On the phone, that port must answer as the WebDriverAgent build you declared (`--ios-wda-bundle-id`), or not at all: before it is declared, before each session and once the session has started. Anything else is not used, and `connect` says what answered.
 
 **Start Appium on this computer's own address: `appium --address 127.0.0.1`.** Appium asks a client for nothing, and
 started without `--address` it can listen on every address this computer has. Then anything on your network that reaches
@@ -236,8 +236,8 @@ start is refused, and so is one whose path could point anywhere but your `--appi
 - the phone it names (`appium:udid`), in every set of capabilities Appium could start it from, is one this agent offers
   right now. A phone you left out with `--skip`, a phone on Wi-Fi or an emulator it does not offer, and a create that
   names no phone (Appium would pick one itself) are refused, and so is a capability named both in a set and inside its `appium:options`;
-- the build it installs, if it names one (`app`), is an `https` address on the farm's own host — the one you gave
-  `--farm`. A path on this machine, another host or plain `http` is refused, and so is such a build installed later
+- the build it installs, if it names one (`app`), is an `https` address on the farm's own host — the one `connect` connects to
+  (`--farm`, or `https://farm.nthcase.com`). A path on this machine, another host or plain `http` is refused, and so is such a build installed later
   in the session.
 
 **What the farm can never ask.** Whatever a later farm sends, the agent refuses:
@@ -248,7 +248,7 @@ start is refused, and so is one whose path could point anywhere but your `--appi
 - inside a session, whatever runs a program, or reads or writes files, on this computer rather than on the phone:
   `execute_driver`, `mobile: shell`, an emulator's console (`mobile: execEmuConsoleCommand`, and a line break in what `mobile: sendSms`, `sensorSet` and their like write to it), screen and audio
   recordings and screen streams that Appium makes or uploads from this computer (XCTest's own among them), `xctrace`, XCTest bundles run from
-  here, `mobile: simctl`, an app's strings read from a file here, a certificate served from here, and Appium's own server log;
+  here, `mobile: simctl`, an app's strings read from a file here, a certificate served from here, and Appium's own server log; and, whatever their arguments, `mobile: startActivity`, `mobile: broadcast` and `mobile: deepLink`, which start an activity, send a broadcast or open an address on the phone, and which the farm's runner never sends;
 - registering a phone with your Apple developer team (`appium:allowProvisioningDeviceRegistration`). That is the yes
   `npx {{PACKAGE}}@latest setup-ios` asks you for, at this machine;
 - a live view of anything but a phone's own screen server, at the address this machine reserved for it; and a live view ends when the session on its phone ends.
@@ -295,7 +295,7 @@ printf 'BrowserStack access key: ' && read -rs NTH_AGENT_BROWSERSTACK_KEY && ech
 
 ```sh
 export NTH_AGENT_BROWSERSTACK_USER=<your BrowserStack username>
-npx {{PACKAGE}}@latest connect --farm https://farm.example
+npx {{PACKAGE}}@latest connect
 ```
 
 **Paste that first line on its own**, for the same reason as the token above — `read` takes whatever
@@ -332,7 +332,7 @@ way would hide the same typo.
 **Name the devices you want offered.** One `--browserstack-device` per device, as `"Name|OsVersion"`:
 
 ```sh
-npx {{PACKAGE}}@latest connect --farm https://farm.example \
+npx {{PACKAGE}}@latest connect \
   --browserstack-device "Google Pixel 9|15.0" \
   --browserstack-device "Samsung Galaxy S23|13.0"
 ```
@@ -534,7 +534,7 @@ they name and ask who runs it; one that points adb off this machine's `127.0.0.1
 | `--wda-project PATH` | — (the search honours `APPIUM_HOME`) | setup-ios | the `WebDriverAgent.xcodeproj` to build, instead of searching Appium's home |
 | `--derived-data-path PATH` | — | setup-ios | where the build lands; unset, a directory under your user config dir |
 | `--yes` | — | setup-ios | answer the plan's question in advance |
-| `--farm URL` | `NTH_AGENT_FARM` | connect | the farm's base URL — `https://` required unless exactly `localhost` or a loopback address |
+| `--farm URL` | `NTH_AGENT_FARM` | connect | optional: the farm's base URL, `https://farm.nthcase.com` when neither is given — `https://` required unless exactly `localhost` or a loopback address |
 | `--token TOKEN` | `NTH_AGENT_TOKEN` — **set it at a prompt** | connect | the workspace agent token; the flag puts it in `ps`, an inline `export` puts it in your history file — see `connect` above |
 | `--keep-wda-warm` | — | connect | leave WebDriverAgent running after a run instead of stopping it when idle |
 | `--wda-idle-after DUR` | — | connect | the idle window before it is stopped (default five minutes); ignored with `--keep-wda-warm` |

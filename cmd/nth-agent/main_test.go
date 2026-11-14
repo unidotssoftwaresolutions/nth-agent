@@ -245,7 +245,11 @@ func TestCredentialsWithNoBuildAreRefusedOnThePathThatForwardsSessions(t *testin
 // AND AN AGENT WITH NO BROWSERSTACK IS UNTOUCHED BY THE RULE — it never asked for the cloud.
 func TestAnAgentWithNoBrowserStackIsNotAskedForABuild(t *testing.T) {
 	var stdout, stderr strings.Builder
-	// No farm/token either, so it exits on THAT mistake — the point is which sentence it prints.
+	// No token either, so it exits on THAT mistake — the point is which sentence it prints.
+	// AMENDED (what the first try showed): connect has a default farm now, so only the missing token stops it, and the
+	// token is emptied here so a token in the tester's own environment cannot start a real connect. WAS: "No farm/token
+	// either", with the environment as it came.
+	t.Setenv("NTH_AGENT_TOKEN", "")
 	run([]string{"connect"}, strings.NewReader(""), &stdout, &stderr)
 	if strings.Contains(stderr.String(), "browserstack-app") {
 		t.Fatalf("an agent with no BrowserStack account was told it needs a BrowserStack build: %q", stderr.String())

@@ -130,9 +130,10 @@ var byName = func() map[string]Capability {
 // and the tunnel reads it before a session-create reaches Appium. A phone left out with --skip, one on Wi-Fi the agent does
 // not offer, or one unplugged since the last tick, is not in it. nil offers none.
 type Phones struct {
-	mu    sync.Mutex
-	udids map[string]bool
-	held  func(udid string, wdaPort int) string
+	mu      sync.Mutex
+	udids   map[string]bool
+	held    func(udid string, wdaPort int) string
+	started startedQuestion // asked once a session has started (iphones.go)
 }
 
 // Offering is a set that offers exactly these phones.
@@ -531,6 +532,8 @@ func inSession(method, path string, body []byte, farmURL string, own func(string
 		}
 	case "/appium/execute_driver":
 		return refuse("execute_driver, a script Appium runs in its own process on this computer")
+	case startActivityRoute: // never_run.go
+		return notRunRefusal("startActivity (appium/device/start_activity)", notRun["startactivity"])
 	case "/appium/start_recording_screen", "/appium/stop_recording_screen":
 		return refuse("a screen recording (" + strings.TrimPrefix(rest, "/appium/") + "), which is made on this computer and can be uploaded from it to any address")
 	case "/appium/app/strings":
@@ -581,6 +584,9 @@ func inSession(method, path string, body []byte, farmURL string, own func(string
 				"is named with letters and digits only), so this agent cannot tell which command Appium would run", safe(strconv.Quote(name))))
 		}
 		command := strings.ToLower(name)
+		if what, ok := notRun[command]; ok { // never_run.go
+			return notRunRefusal("mobile: "+safe(name), what)
+		}
 		if what, ok := runsOnThisComputer[command]; ok {
 			return refuse(fmt.Sprintf("mobile: %s, which %s", safe(name), what))
 		}

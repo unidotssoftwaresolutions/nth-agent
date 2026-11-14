@@ -22,6 +22,9 @@ type Options struct {
 	// Why prints EVERY caveat, including the ones a green check states. Default off — see the count line in
 	// Human, which is what keeps the withheld paragraphs from being invisible.
 	Why bool
+	// StateFolder is where this account's agent keeps its node identity and its other files on this machine
+	// (state.Folder), said after the checks; "" says nothing (WHAT_THE_FIRST_TRY_SHOWED).
+	StateFolder string
 }
 
 // wrapWidth is the width a report folds to off a terminal (ui.ReportWidth): a fixed width a person can paste and anyone
@@ -106,6 +109,11 @@ func Human(w io.Writer, r Report, opts Options) error {
 	}
 
 	writeCapture(say, r.Capture, width)
+	if opts.StateFolder != "" {
+		say("")
+		say(m.Marked(ui.MarkNote, "agent state folder: "+farm.OneLineForTerminal(opts.StateFolder)+" — this machine's node identity (node-id) "+
+			"and the agent's other files for this account", m.Dim, width)...)
+	}
 	writeWithheldCount(say, r, opts, width)
 	if len(blocking) > 0 {
 		say("")

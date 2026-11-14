@@ -21,10 +21,10 @@ Contents
   github.com/grandcat/zeroconf v1.0.0                                  MIT
   github.com/miekg/dns v1.1.57                                         BSD-3-Clause, copyright notices
   go.mozilla.org/pkcs7 v0.9.0                                          MIT
-  golang.org/x/crypto v0.57.0                                          BSD-3-Clause, Go's patent grant
-  golang.org/x/net v0.60.0                                             BSD-3-Clause, Go's patent grant
-  golang.org/x/sys v0.48.0                                             BSD-3-Clause, Go's patent grant
-  golang.org/x/text v0.42.0                                            BSD-3-Clause, Go's patent grant
+  golang.org/x/crypto v0.59.0                                          BSD-3-Clause, Go's patent grant
+  golang.org/x/net v0.62.0                                             BSD-3-Clause, Go's patent grant
+  golang.org/x/sys v0.50.0                                             BSD-3-Clause, Go's patent grant
+  golang.org/x/text v0.44.0                                            BSD-3-Clause, Go's patent grant
   howett.net/plist v1.0.1                                              BSD-2-Clause-Views and BSD-3-Clause
   software.sslmate.com/src/go-pkcs12 v0.7.2                            BSD-3-Clause
 
@@ -379,7 +379,7 @@ SOFTWARE.
 
 
 ================================================================================
-Module: golang.org/x/crypto v0.57.0
+Module: golang.org/x/crypto v0.59.0
 Licence: BSD-3-Clause (LICENSE), Go's patent grant (PATENTS)
 
 ----- LICENSE -----
@@ -436,7 +436,7 @@ rights granted to you under this License for this implementation of Go
 shall terminate as of the date such litigation is filed.
 
 ================================================================================
-Module: golang.org/x/net v0.60.0
+Module: golang.org/x/net v0.62.0
 Licence: BSD-3-Clause (LICENSE), Go's patent grant (PATENTS)
 
 ----- LICENSE -----
@@ -493,7 +493,7 @@ rights granted to you under this License for this implementation of Go
 shall terminate as of the date such litigation is filed.
 
 ================================================================================
-Module: golang.org/x/sys v0.48.0
+Module: golang.org/x/sys v0.50.0
 Licence: BSD-3-Clause (LICENSE), Go's patent grant (PATENTS)
 
 ----- LICENSE -----
@@ -550,7 +550,7 @@ rights granted to you under this License for this implementation of Go
 shall terminate as of the date such litigation is filed.
 
 ================================================================================
-Module: golang.org/x/text v0.42.0
+Module: golang.org/x/text v0.44.0
 Licence: BSD-3-Clause (LICENSE), Go's patent grant (PATENTS)
 
 ----- LICENSE -----

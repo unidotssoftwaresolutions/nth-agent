@@ -23,9 +23,9 @@ import (
 
 // Config wires the loop. Every timing is a parameter so tests drive the loop without one sleep.
 type Config struct {
-	Client   *farm.Client
-	NodeID   string
-	HostName string
+	Client             *farm.Client
+	NodeID, NodeIDFile string // and the file this machine keeps it in (state.NodeIDFile; "" = unknown)
+	HostName           string
 	// AgentVersion is what `--version` prints — a published binary's tag, or `dev`. Empty declares nothing, which
 	// is what every agent built before this field existed sends. See farm.DeclareAgentVersion.
 	AgentVersion string
@@ -90,6 +90,8 @@ type Config struct {
 	// registration publishes and the probe asks on, so the two cannot disagree about what they are talking about.
 	// nil = this machine declares none, and then nothing is published and nothing is probed.
 	WdaPortFor func(ctx context.Context, udid string) uint16
+	// WdaIdentity asks what answers on one iPhone's WebDriverAgent port ON THE PHONE (wdaidentity.go). nil = not asked.
+	WdaIdentity func(ctx context.Context, udid string, port uint16) wda.Identity
 	// DeviceFindings computes WHAT THIS MACHINE ALREADY CHECKED about its iOS devices — the doctor's answers,
 	// reduced to per-udid wire findings (THE_CHECK_THAT_ALREADY_KNEW). nil = this build declares none.
 	//
@@ -271,7 +273,7 @@ func Run(ctx context.Context, cfg Config) error {
 			declared = now
 		}
 
-		outcomes := cfg.Probes(ctx)
+		outcomes := withholdStrangers(ctx, cfg, narrator, cfg.Probes(ctx)) // the WebDriverAgent on each iPhone (wdaidentity.go)
 		tidyWda(ctx, cfg, narrator, &wdaIdle, outcomes)
 		report := buildReport(ctx, cfg, narrator, outcomes, findings)
 		narrator.narrateOutcomes(outcomes)
@@ -402,7 +404,10 @@ func offerPhones(cfg Config, report farm.Report) {
 			udids = append(udids, device.Descriptor.Udid)
 		}
 	}
-	cfg.Phones.OfferHeld(udids, WdaPortGuard(declaredWdaPorts(report), cfg.WdaPortListeners))
+	// …and what answers on each iPhone's WebDriverAgent port on the phone, before its session and once it has started
+	// (wdaidentity.go).
+	declared := declaredWdaPorts(report)
+	cfg.Phones.OfferAsking(udids, identityAtCreate(cfg, declared, WdaPortGuard(declared, cfg.WdaPortListeners)), identityOnceStarted(cfg, declared))
 }
 
 // offerMirrors tells the drive tunnel which mirrors it may stream: exactly the ports on the rows this report
@@ -612,7 +617,7 @@ func registerWithBackoff(ctx context.Context, cfg Config, narrator *narrator) er
 	// sees from this machine already says what the machine already checked.
 	cache := &findingsCache{}
 	for {
-		outcomes := cfg.Probes(ctx)
+		outcomes := withholdStrangers(ctx, cfg, narrator, cfg.Probes(ctx)) // the WebDriverAgent on each iPhone (wdaidentity.go)
 		report := buildReport(ctx, cfg, narrator, outcomes, cache)
 		confirmed, status, err := cfg.Client.Register(ctx, cfg.NodeID, cfg.HostName, report)
 		if stopping(ctx, err) {
@@ -655,10 +660,18 @@ func registerWithBackoff(ctx context.Context, cfg Config, narrator *narrator) er
 			// The farm's sentence ("Re-register.") is the same at every node door on purpose, and is the wrong advice here.
 			// STOP FIRST (A_MACHINE_THAT_STAYS_THE_CUSTOMERS): this advice, followed while an earlier connect still
 			// ran, was how one folder came to hold two identities offering the same phones.
+			// THE FILE BY ITS FULL PATH, AND MOVED ASIDE, NEVER DELETED (WHAT_THE_FIRST_TRY_SHOWED): a machine that once
+			// connected to another workspace keeps that workspace's id, and the person at it could not tell where it was or
+			// what to do. Moved aside, the next start mints a new id under this token's workspace, and the old one is kept.
+			id, file := "this id", "the node-id file in the agent's config folder"
+			if cfg.NodeIDFile != "" {
+				id, file = "the id in "+cfg.NodeIDFile, cfg.NodeIDFile
+			}
 			narrator.stops(ui.Problem{
-				What: "the farm refused this node's identity: this id is already registered at the farm, but not to the workspace of this agent's token.",
+				What: "the farm refused this node's identity: " + id + " is already registered at the farm, but not to the workspace of this agent's token.",
 				Why:  "This agent stops: nothing on this machine is offered under an identity the farm refuses.",
-				Do:   "First stop every npx nthcase-agent connect running on this machine; then remove the node-id file in the agent's config folder to mint a fresh identity, or contact your operator."})
+				Do: "First stop every npx nthcase-agent connect running on this machine; then move " + file + " aside (rename it; do not " +
+					"delete it) and start connect again: it registers this machine anew under your token's workspace. Or ask your operator."})
 			return fmt.Errorf("identity refused: %w", err)
 		case farm.CallBusy:
 			// A 503 with no envelope is the farm's address answering in its place (NTH_AGENT_0_4_4), as at the heartbeat.
@@ -731,6 +744,7 @@ type narrator struct {
 	hinted      map[inventory.Platform]bool
 	driverWasUp *bool
 	wdaSaid     bool
+	identities  identityState   // what answers on each iPhone's WebDriverAgent port (wdaidentity.go)
 	saidDown    bool            // the reports now declare TunnelDown, and that was said
 	leftOutSaid map[string]bool // each left-out phone is named once per run (sayLeftOut)
 	newerSaid   string          // the newer release last said (newerRelease), so each is said once
@@ -1120,7 +1134,7 @@ func (n *narrator) driverUp(outcomes []inventory.Outcome) {
 func (n *narrator) unsafeTransport(err error) {
 	n.stops(ui.Problem{What: farm.OneLineForTerminal(err.Error()),
 		Why: "This agent stops before anything is sent, so your workspace token never crosses the network readable.",
-		Do:  "give the farm's https:// address with --farm (or NTH_AGENT_FARM), then start the agent"})
+		Do:  "give the farm's https:// address with --farm (or NTH_AGENT_FARM), or name none to connect to " + farm.DefaultBaseURL + ", then start the agent"})
 }
 
 // connected is the updating line once the farm has this node: "connecting to …" is over.
@@ -1144,7 +1158,7 @@ func (n *narrator) transportDown(err error, then string) {
 		}
 		n.problem(ui.Problem{Level: ui.LevelLook, What: what + " — " + then,
 			Why: "Your phones are off offer until the farm answers; nothing on this machine is lost.",
-			Do:  "nothing to do if it is brief; if it lasts, check this machine's network and the farm address (--farm or NTH_AGENT_FARM)",
+			Do:  "nothing to do if it is brief; if it lasts, check this machine's network and the farm address (--farm or NTH_AGENT_FARM; with neither, " + farm.DefaultBaseURL + ")",
 			Raw: farm.OneLineForTerminal(err.Error())})
 		n.down = true
 	}

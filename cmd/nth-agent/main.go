@@ -71,9 +71,9 @@ flags (both commands):
                     running on this machine, are offered.
 
 connect flags:
-  --farm URL      the farm's base URL (or NTH_AGENT_FARM). Must be https:// — a plain http URL would
-                  send your workspace token in cleartext; http is allowed only for exactly localhost
-                  or a loopback address like 127.0.0.1, and never through a proxy.
+  --farm URL      optional: the farm's base URL (or NTH_AGENT_FARM); with neither, https://farm.nthcase.com.
+                  Must be https:// — plain http would send your workspace token in cleartext; http is
+                  allowed only for exactly localhost or a loopback address, and never through a proxy.
   --appium URL    the LOCAL Appium endpoint next to your devices (or NTH_AGENT_APPIUM). With it, your
                   usable devices are registered for real runs and driven through an outbound tunnel.
                   A PREREQUISITE, AND IT STAYS ONE (decided 2026-08-23): you install Appium and start
@@ -372,7 +372,7 @@ func runDoctor(inv *invocation, stdout, stderr io.Writer) int {
 		// (is it a terminal?) and what the person typed. The renderer is handed two answers and guesses neither.
 		err = doctor.Human(stdout, report, doctor.Options{
 			Mode: ui.For(stdout, ui.Asked{NoColor: inv.Bools["--no-color"]}),
-			Why:  inv.Bools[doctor.WhyFlag],
+			Why:  inv.Bools[doctor.WhyFlag], StateFolder: stateFolder(), // and where the agent keeps its state (thefarm.go)
 		})
 	}
 	if err != nil {
@@ -417,7 +417,7 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 	defer console.Done()
 	stdout = console
 	// Flags win over the environment; the environment is the preferred home for the token (see usage).
-	farmURL := firstNonEmpty(inv.first("--farm"), os.Getenv("NTH_AGENT_FARM"))
+	farmURL := theFarm(inv.first("--farm"), os.Getenv("NTH_AGENT_FARM"))
 	token := firstNonEmpty(inv.first("--token"), os.Getenv("NTH_AGENT_TOKEN"))
 	appiumURL := firstNonEmpty(inv.first("--appium"), os.Getenv("NTH_AGENT_APPIUM"))
 	// THIS MACHINE'S OWN SIGNING IDENTITY. Flags win over the environment, exactly like the three above. Neither
@@ -461,11 +461,11 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 		refuse(stderr, noColor, skipMistake(err))
 		return exitMistake
 	}
-	if farmURL == "" || token == "" {
+	if token == "" {
 		refuse(stderr, noColor, ui.Problem{
-			What: "connect needs the farm URL (--farm or NTH_AGENT_FARM) and the workspace agent token (NTH_AGENT_TOKEN preferred; --token accepted).",
-			Why:  "Nothing was started: without both, this machine has nowhere to register.",
-			Do:   "set NTH_AGENT_TOKEN with the prompt line " + command.Line("--help") + " prints, then run: " + command.Line("connect --farm URL")})
+			What: "connect needs the workspace agent token (NTH_AGENT_TOKEN preferred; --token accepted).",
+			Why:  "Nothing was started: without it, the farm cannot tell which workspace this machine belongs to.",
+			Do:   "set NTH_AGENT_TOKEN with the prompt line " + command.Line("--help") + " prints, then run: " + command.Line("connect")})
 		return exitMistake
 	}
 	// HALF-CONFIGURED IS A MISTAKE, NOT A STATE. Reading one-of-two as "configured" sends up a session that
@@ -693,9 +693,9 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 		// THE SAME STRING `--version` PRINTS, and the only place either reads it. A published binary carries its
 		// tag (stamped by release.yml's -ldflags); one somebody built themselves carries `dev`, which is the true
 		// answer and is sent as such.
-		AgentVersion:   version,
-		Client:         &farm.Client{BaseURL: farmURL, Token: token, HTTP: &http.Client{Timeout: 15 * time.Second}},
-		NodeID:         nodeID,
+		AgentVersion: version,
+		Client:       &farm.Client{BaseURL: farmURL, Token: token, HTTP: &http.Client{Timeout: 15 * time.Second}},
+		NodeID:       nodeID, NodeIDFile: state.NodeIDFile(configDir), // which a refused identity names (WHAT_THE_FIRST_TRY_SHOWED)
 		HostName:       hostName,
 		Probes:         connect.ProbeSet(skip, android.AdbRunner, ios.UsbmuxdListerFor(offerUncabled), probeTimeout, offerUncabled),
 		CloudDevices:   cloudRows,
@@ -727,7 +727,7 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 		WdaIdleAfter: idleAfter,
 		WdaProbe:     probeWda,
 		WdaStop:      stopWda,
-		WdaPortFor:   chooser.For,
+		WdaPortFor:   chooser.For, WdaIdentity: identifyWda(wdaClient, iosWdaBundleID), // and what answers on it (thefarm.go)
 
 		// THE CHECK THAT ALREADY KNEW: the doctor's riding answers, computed here and refreshed by the loop on
 		// its own cadence (Config.FindingsMaxAge), so a session failure can name the cause the machine already

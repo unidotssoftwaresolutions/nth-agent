@@ -76,7 +76,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # ONE GRANT, FOR AUTHENTICATION AND FOR PROVENANCE. `id-token: write` lets the runner mint the OIDC token trusted
     # publishing exchanges for a registry credential, and npm's provenance statement is made from the same token.
     # Provenance needs two things more: a public source repository, and a package that names it. Both hold now: the
@@ -104,12 +104,12 @@ jobs:
       # from this checkout, and the binaries are the tag's. A dispatch from main after main moved on used to pair one
       # tag's binaries with another commit's README; now every file in the package is the tag's. `refs/tags/` so a branch
       # with the tag's name can never be what is checked out: the commit here is the one the archives are checked against.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: refs/tags/${{ inputs.tag }}
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"

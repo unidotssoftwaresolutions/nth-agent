@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   commit-messages:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Every job ends on its own (CI_THAT_ALWAYS_ENDS).
     timeout-minutes: 15
     permissions:
@@ -34,7 +34,7 @@ jobs:
       GOTOOLCHAIN: local # the Go setup-go installed, never one a go command would fetch
     steps:
       # THE WHOLE HISTORY, so the range below can be read whatever it reaches, and every tag with its message.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -99,7 +99,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
         id: go
         timeout-minutes: 2
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache: false

@@ -66,8 +66,11 @@ func TestARegister404SaysTheOneCauseAndKeepsTheAgentsOwnSteps(t *testing.T) {
 	// the transcript. The words are the ones this seal held, cut where the problem's parts meet.
 	what := "1 thing stops runs on this machine\n✗ the farm refused this node's identity: this id is already registered at the farm, but not to the workspace of " +
 		"this agent's token.\n"
-	want := "  → First stop every npx nthcase-agent connect running on this machine; then remove the node-id " +
-		"file in the agent's config folder to mint a fresh identity, or contact your operator.\n"
+	// AMENDED (what the first try showed): the identity is moved aside, never deleted, and the line says what happens then.
+	// WAS: "then remove the node-id file in the agent's config folder to mint a fresh identity, or contact your operator."
+	want := "  → First stop every npx nthcase-agent connect running on this machine; then move the node-id " +
+		"file in the agent's config folder aside (rename it; do not delete it) and start connect again: it registers this " +
+		"machine anew under your token's workspace. Or ask your operator.\n"
 	if !strings.Contains(out.String(), what) || !strings.HasSuffix(out.String(), want) || strings.Count(out.String(), "refused this node's identity") != 1 {
 		t.Fatalf("the register 404's line:\n got %q\nwant it to end %q", out.String(), want)
 	}

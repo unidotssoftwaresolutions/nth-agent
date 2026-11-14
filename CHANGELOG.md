@@ -4,6 +4,38 @@ What changed in each release of nth-agent, newest first. Each heading is a versi
 notes are its section here. A command is named here by what you type after the package's name, `capture enable` for
 example: run it through `npx` with that name in front, the way the README shows.
 
+## 0.5.8
+
+- **`connect` connects to the farm without being told which.** It refused to start without `--farm` or `NTH_AGENT_FARM`,
+  though a customer has one farm to connect to. With neither, it now connects to `https://farm.nthcase.com`; the flag and
+  the variable still win, with every rule they had, and the start banner names the farm. Without a token it asks for the
+  token alone.
+- **A refused identity names its file.** A computer that once connected to another workspace keeps that workspace's node
+  id, and the farm refuses it, and the sentence did not say where the id was. It now names the `node-id` file by its full
+  path on this computer and says to move it aside, not delete it, and start `connect` again, which registers the computer
+  anew under your token's workspace. `doctor` says where the agent keeps its state.
+- **`devices` and the farm say the same about iPhones.** With no signing identity declared, the registration said "iPhones
+  are attached and are not offered" whenever iOS answered, iPhone or not, so the Devices page said it with none on the
+  cable while `devices` said none was attached. It is now said only when an iPhone this computer would offer is held back
+  for want of an identity.
+- **The WebDriverAgent on an iPhone is the one you declared.** The agent took any answer on an iPhone's WebDriverAgent
+  port for WebDriverAgent, and stops WebDriverAgent there after five idle minutes, so another app on the phone could take
+  the port and be sent the next session's commands and what it types. What answers there must now say it is the build
+  `--ios-wda-bundle-id` names, or nothing may answer: before the port is declared, before each session, and once the
+  session has started, when it must also hold that session. An iPhone whose port something else answers is shown as not
+  usable, with what answered; a session is refused before it reaches Appium, or ended at Appium once started, and the
+  farm is told why.
+- **`mobile: startActivity`, `broadcast` and `deepLink` are refused.** They start an activity, send a broadcast or open an
+  address on the phone, and the drivers build a command on the phone from their arguments. The farm's runner sends none
+  of them, so they are refused whatever their arguments, and so is the older route to startActivity.
+- **Two libraries are raised past the last flaws Go's vulnerability database names in them.** `golang.org/x/net` 0.62.0
+  and `golang.org/x/crypto` 0.59.0 close the three left in 0.5.7, in HTML parsing and in the old OpenPGP package, which
+  the agent does not link, with the `x/sys` and `x/text` releases they need. govulncheck finds nothing, called or not.
+- **CI runs on named images, and its actions on Node 24.** Each job names `ubuntu-24.04` or `windows-2025` rather than an
+  image GitHub moves, and checkout, setup-go, setup-node, upload-artifact and download-artifact are at the releases that
+  moved them to Node 24. The step that makes the GitHub release stays at action-gh-release 2.6.2 until a later change has
+  read which of its releases runs on Node 24.
+
 ## 0.5.7
 
 - **A request is read the way Appium reads it.** Inside a session, the agent read a request's body by Go's rules, which take

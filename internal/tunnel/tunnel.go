@@ -1104,6 +1104,11 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 	// for a session that really started. From here on every frame naming this id follows this destination.
 	if create && response.StatusCode < 300 {
 		if id := browserstack.SessionIDOf(payload); id != "" {
+			if dest == toLocal {
+				if why := t.cfg.Phones.Started(ctx, decoded); why != "" {
+					return t.endStarted(frame.ID, id, why) // not on the WebDriverAgent this machine declared (sessioncheck.go)
+				}
+			}
 			// `decoded` is the body that was actually SENT — merged, for a cloud create — so the silence budget
 			// the entry remembers is the one the far side was actually asked for.
 			t.remember(id, dest, decoded)

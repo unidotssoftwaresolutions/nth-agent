@@ -210,7 +210,7 @@ func AttachDevices(report Report, outcomes []inventory.Outcome, appiumURL string
 			// carries the PLATFORM'S own word for a device the platform itself cannot offer, and a state we coin
 			// is not the platform's word. The WHY rides the platform outcome's caveat — the same Reason/Remedy an
 			// answered platform already uses — so the screen that renders a machine's health renders this too.
-			report.Outcomes = withCaveat(report.Outcomes, platform, IosSigningReason, IosSigningRemedy())
+			report.Outcomes = withSigningCaveat(report.Outcomes, platform, o) // only with an iPhone held back (signing_caveat.go)
 			continue
 		}
 		for _, d := range o.Offerable() {

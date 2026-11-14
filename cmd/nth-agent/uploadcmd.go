@@ -118,7 +118,7 @@ func printUploaded(stdout io.Writer, app browserstack.App) {
 	if app.CustomID != "" {
 		fmt.Fprintf(stdout, "custom id: %s — uploading again with the same one repoints it at the new build\n", app.CustomID)
 	}
-	fmt.Fprintf(stdout, "\nUse it with connect:\n  %s\n", command.Line("connect --farm https://... --browserstack-app "+pastable(app.URL)))
+	fmt.Fprintf(stdout, "\nUse it with connect:\n  %s\n", command.Line("connect --browserstack-app "+pastable(app.URL)))
 	fmt.Fprintf(stdout, "or export it once:\n  export NTH_AGENT_BROWSERSTACK_APP=%s\n", shellQuoted(app.URL))
 	fmt.Fprintln(stdout, "\nBrowserStack deletes uploaded builds after 30 days, so this id stops working then.")
 }

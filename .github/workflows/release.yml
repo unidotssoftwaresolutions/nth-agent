@@ -48,14 +48,16 @@ on:
 # its list.
 #
 # ⚠️ AND EVERY ACTION IS NAMED BY ITS COMMIT. `@v4` is a tag in somebody else's repository and runs whatever it points at
-# when the job starts. Each `uses:` below names the commit that tag pointed at on 2026-10-20, with the version beside it.
-# To move to a newer one, look up the new version's commit, read what changed, and change both the SHA and the comment.
+# when the job starts. Each `uses:` below names the commit its release tag named on 2026-11-14 (`git ls-remote --tags` on the
+# action's own repository), with the version beside it; ci_on_named_images_test.go holds the two together. To move to a
+# newer one, look up the new version's commit, read what changed, and change the SHA, the comment and that list.
+# Each job names its runner image's version (ubuntu-24.04), never ubuntu-latest, which GitHub moves to a new image.
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Every job ends on its own (CI_THAT_ALWAYS_ENDS): one target built, its notices checked and archived; 30 is generous.
     timeout-minutes: 30
     permissions:
@@ -81,7 +83,7 @@ jobs:
           - goos: windows
             goarch: amd64
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -124,7 +126,7 @@ jobs:
       # ⚠️ NO CACHE. setup-go restores, by default, the module and build cache that any run on `main` saved, and a tag's run
       # can restore main's: a binary would then be built from module sources and compiled packages nobody re-read. A release
       # is built from the tag's tree and the module proxy's checked sums alone.
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache: false
@@ -229,7 +231,7 @@ jobs:
       # ⚠️ THESE ARTIFACTS ARE WHAT NPM GETS CHECKED AGAINST. publish-npm.yml refuses a release whose archives are not,
       # byte for byte, the ones this run kept here, so they must outlive the wait between a release and its publish: 90
       # days unless the repository's retention setting is shorter.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -244,7 +246,7 @@ jobs:
   # cmd/nth-agent refuses two workflows sharing a job name.
   github-release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Every job ends on its own (CI_THAT_ALWAYS_ENDS): collects the archives and creates the release.
     timeout-minutes: 15
     permissions:
@@ -256,7 +258,7 @@ jobs:
       # checkout does can touch what this release uploads. A job output from `build` would come from a three-leg
       # matrix, and an uploaded artifact would arrive among the release's own files. The three files: package.json
       # for the name, CHANGELOG.md for the notes, THIRD_PARTY_NOTICES.txt to attach beside the archives.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
           path: source
@@ -266,7 +268,7 @@ jobs:
             THIRD_PARTY_NOTICES.txt
           sparse-checkout-cone-mode: false
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           merge-multiple: true
 

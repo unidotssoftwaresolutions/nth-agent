@@ -97,7 +97,8 @@ func TestThe404AdviceSaysToStopTheRunningConnectFirst(t *testing.T) {
 	_ = connect.Run(context.Background(), cfg)
 	text := out.String()
 	stop := strings.Index(text, "stop every npx nthcase-agent connect running on this machine")
-	remove := strings.Index(text, "remove the node-id file")
+	// AMENDED (what the first try showed): the identity is moved aside, never deleted. WAS: "remove the node-id file".
+	remove := strings.Index(text, "move the node-id file")
 	if stop < 0 || remove < 0 || stop > remove {
 		t.Fatalf("the advice says to stop the running connect before removing the identity:\n%s", text)
 	}

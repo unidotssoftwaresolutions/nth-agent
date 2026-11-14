@@ -109,7 +109,9 @@ func TestEveryRestartLineRunsThisReleaseHoweverTheAgentWasStarted(t *testing.T) 
 		{"upload (cmd/nth-agent/uploadcmd.go)",
 			// AMENDED (what a lease can ask): the export line quotes the id, which is the hub's text, so a pasted line runs
 			// nothing after it. WAS: "  export NTH_AGENT_BROWSERSTACK_APP=bs://f1e2d3c4\n".
-			"uploaded: bs://f1e2d3c4\n\nUse it with connect:\n  npx nthcase-agent connect --farm https://... --browserstack-app bs://f1e2d3c4\n" +
+			// AMENDED (what the first try showed): connect has a default farm, so the line names none. WAS: "npx nthcase-agent
+			// connect --farm https://... --browserstack-app bs://f1e2d3c4".
+			"uploaded: bs://f1e2d3c4\n\nUse it with connect:\n  npx nthcase-agent connect --browserstack-app bs://f1e2d3c4\n" +
 				"or export it once:\n  export NTH_AGENT_BROWSERSTACK_APP='bs://f1e2d3c4'\n\nBrowserStack deletes uploaded builds after 30 days, so this id stops working then.\n",
 			false, uploaded},
 	}

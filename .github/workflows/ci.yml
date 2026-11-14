@@ -43,14 +43,14 @@ concurrency:
   cancel-in-progress: true
 
 # READ ONLY, AND EVERY ACTION NAMED BY ITS COMMIT. CI builds and tests; it writes nothing, so it asks for nothing
-# more than reading the tree, instead of the repository's default token. The SHAs are the commits the v4 and v5 tags
-# pointed at on 2026-10-20 — see release.yml.
+# more than reading the tree, instead of the repository's default token. The SHAs are the commits the release tags
+# named on 2026-11-14 — see release.yml. Each job names its runner image's version, never a -latest that GitHub moves.
 permissions:
   contents: read
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Every job ends on its own (CI_THAT_ALWAYS_ENDS): a job with none runs to GitHub's 360-minute default, and a sibling
     # repository's run sat 22 minutes in a step that had printed its results (2026-10-30). Build, vet and `go test -race`;
     # 30 is generous, and each step carries its own so the log names the one that stopped.
@@ -58,7 +58,7 @@ jobs:
     env:
       GOTOOLCHAIN: local # the Go setup-go installed, never one a go command would fetch
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       # ONE HOME for the Go version: go.mod's toolchain line, read here and given to setup-go exactly, as release.yml does.
@@ -73,7 +73,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
         id: go
         timeout-minutes: 2
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ steps.go.outputs.version }}
       - run: go build ./...
@@ -143,7 +143,7 @@ jobs:
   # Tests that exercise a Unix-only tool — a shell-script fake, a workflow step run in bash, a Unix signal or file mode —
   # skip here and say which; they run in the job above.
   windows-unit-tests:
-    runs-on: windows-latest
+    runs-on: windows-2025
     # Every job ends on its own (CI_THAT_ALWAYS_ENDS).
     timeout-minutes: 30
     env:
@@ -154,7 +154,7 @@ jobs:
       # Set for this job's git, before the checkout.
       - run: git config --global core.autocrlf false
         timeout-minutes: 2
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       - name: The Go go.mod names
@@ -169,7 +169,7 @@ jobs:
         id: go
         shell: bash
         timeout-minutes: 2
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ steps.go.outputs.version }}
       - run: go build ./...
@@ -214,7 +214,7 @@ jobs:
           exit $(( ran != 0 || failed != 0 ))
 
   cross-compile:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Every job ends on its own (CI_THAT_ALWAYS_ENDS): one `go build` per target.
     timeout-minutes: 15
     env:
@@ -233,7 +233,7 @@ jobs:
           - goos: windows
             goarch: amd64
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       - name: The Go go.mod names
@@ -247,7 +247,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
         id: go
         timeout-minutes: 2
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ steps.go.outputs.version }}
       # The targets we compile are exactly the targets this repo may claim (see the platform-claims

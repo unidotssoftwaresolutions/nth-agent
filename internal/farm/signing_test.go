@@ -196,7 +196,9 @@ func TestEveryReadOfTheSigningIdentityIsClassified(t *testing.T) {
 		// .mobileprovision. It is a LOCAL read with a LOCAL exit — the doctor's own terminal, on the machine that
 		// holds the keychain — and it is what lets the check say "the code you declared is your certificate's, not
 		// your team's". It is sent nowhere: no finding, no registration, no URL.
-		"identities.go": "READS this Mac's code-signing identities (`security find-identity`) and each certificate's OU — the team; consumed only by the doctor check that names the certificate-code trap, printed only in the operator's own terminal, never sent",
+		// WHAT_THE_FIRST_TRY_SHOWED, decision A6: classified like every other reader.
+		"wdaidentity.go": "reads the declared WDA BUNDLE ID — never the team — to judge what answers on an iPhone's WebDriverAgent port, and names it in the sentence for one that is not it: on this machine's terminal, as doctor's checks.go echoes it, and in the not-usable row and the refusals the farm reads, which already holds it (the registration declares it, and the runner sends it back as updatedWDABundleId)",
+		"identities.go":  "READS this Mac's code-signing identities (`security find-identity`) and each certificate's OU — the team; consumed only by the doctor check that names the certificate-code trap, printed only in the operator's own terminal, never sent",
 	}
 	found := signingReadsUnder(t, filepath.Join("..", ".."))
 	// INSTRUMENT GUARD (population, not classifier): the walk must have found the one intended exit.
