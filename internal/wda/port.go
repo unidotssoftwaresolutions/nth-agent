@@ -115,6 +115,9 @@ func (c *PortChooser) pick(ctx context.Context, udid string) uint16 {
 	base := uint32(derived - PortBase)
 	for offset := 0; offset < tries; offset++ {
 		candidate := PortBase + uint16((base+uint32(offset))%PortSpan)
+		if c.givenElsewhere(udid, candidate) {
+			continue
+		}
 		if !c.taken(ctx, candidate) {
 			return candidate
 		}
@@ -122,6 +125,20 @@ func (c *PortChooser) pick(ctx context.Context, udid string) uint16 {
 	// Every candidate held. Declare the derived one: a number a person can predict beats a number nobody can,
 	// and the session-start failure names it.
 	return derived
+}
+
+// givenElsewhere says whether this machine already declared port for another phone (ANOTHER_ACCOUNT_AND_LIMITS). Two
+// phones' derived ports can meet — a hash of the udid into ten thousand ports — and the walk past a held port can step
+// onto another phone's; the farm pins each session's wdaLocalPort to the declared one, so two phones declared one port
+// would have two leases' sessions given one host port. The liveview chooser skips such a port for the same reason.
+// Called with mu held.
+func (c *PortChooser) givenElsewhere(udid string, port uint16) bool {
+	for other, given := range c.chosen {
+		if other != udid && given == port {
+			return true
+		}
+	}
+	return false
 }
 
 // taken reports whether a stranger holds this port. Nothing listening is free; WebDriverAgent answering is ours.

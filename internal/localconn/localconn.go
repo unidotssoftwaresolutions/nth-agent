@@ -1,5 +1,6 @@
 // Package localconn is how this agent talks to a program on THIS machine — the customer's Appium, adb's server, a phone's
-// screen server: over loopback only, and only when the program that answers runs as this account (or as root).
+// screen server: over loopback only, and only when the program that answers runs as this account (or, on Linux and
+// Windows, as root: netcap.MayServeThisAccount).
 //
 // WHY (A_MACHINE_THAT_STAYS_THE_CUSTOMERS, item 3). Every account on a machine can listen on 127.0.0.1. On a machine other
 // people log into, another account that holds Appium's port while the customer's Appium is down would be sent the
@@ -37,7 +38,8 @@ type Dialer struct {
 }
 
 // DialContext dials address over IPv4 loopback — whatever the network asked for, and whatever a name resolves to — and keeps
-// the connection only when the program that answered runs as this account or as root.
+// the connection only when the program that answered runs as this account (or as root, where netcap.MayServeThisAccount
+// lets it).
 func (d Dialer) DialContext(ctx context.Context, _, address string) (net.Conn, error) {
 	timeout := d.Timeout
 	if timeout <= 0 {
@@ -61,7 +63,7 @@ func (d Dialer) DialContext(ctx context.Context, _, address string) (net.Conn, e
 	if owner == nil {
 		owner = netcap.OwnerOfListenerBehind
 	}
-	if uid, found := owner(conn); !found || !netcap.MayUseTheProxy(uid) {
+	if uid, found := owner(conn); !found || !netcap.MayServeThisAccount(uid) {
 		_ = conn.Close()
 		return nil, &NotThisAccount{What: d.What, Address: conn.RemoteAddr().String(), UID: uid, Found: found}
 	}
@@ -92,6 +94,10 @@ type NotThisAccount struct {
 func (e *NotThisAccount) Error() string {
 	if !e.Found {
 		return fmt.Sprintf("the agent could not tell which account runs the program on %s, so it will not use it as %s", e.Address, e.What)
+	}
+	if e.UID == 0 {
+		return fmt.Sprintf("the program on %s is behind a socket root made, %s, so the agent will not use it as %s — run it as yourself",
+			e.Address, netcap.RootServesNote, e.What)
 	}
 	return fmt.Sprintf("the program on %s runs as another account on this machine (uid %d), so the agent will not use it as %s",
 		e.Address, e.UID, e.What)

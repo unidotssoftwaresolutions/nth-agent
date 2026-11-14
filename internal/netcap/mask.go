@@ -273,7 +273,9 @@ func sensitiveHeader(name string) bool {
 func maskHeaders(headers []Header) []Header {
 	out := make([]Header, len(headers))
 	for i, h := range headers {
-		if sensitiveHeader(h.Name) {
+		if len(h.Value) > MaxHeaderValueBytes { // left out whole, never cut and then masked (limits.go)
+			out[i] = Header{Name: h.Name, Value: HeaderLeftOut(len(h.Value))}
+		} else if sensitiveHeader(h.Name) {
 			out[i] = Header{Name: h.Name, Value: Mask}
 		} else if holdsAnAddress(h.Name) {
 			out[i] = Header{Name: h.Name, Value: maskAddress(h.Value)}
@@ -397,14 +399,21 @@ func maskPairsAs(text string, reading pairReading) string {
 			at++
 			continue
 		}
+		// THE NAME IS ASKED FIRST (ANOTHER_ACCOUNT_AND_LIMITS): a value is read only for a name that is held, and then the
+		// scan goes on past it. Read before the name was asked, a value was scanned again from every lead inside it, which
+		// made a text of nested leads cost the square of its length.
+		if !nameSensitive(formDecoded(text[nameStart:nameEnd])) {
+			at++ // NOT past the value: a pair nested in it is read too
+			continue
+		}
 		from, to := heldValue(text, nameEnd+1, reading, query, fragment)
-		if to > from && nameSensitive(formDecoded(text[nameStart:nameEnd])) {
+		if to > from {
 			b.WriteString(text[copied:from])
 			b.WriteString(Mask)
 			copied, at = to, to
 			continue
 		}
-		at++ // NOT past the value: a pair nested in it is read too
+		at++
 	}
 	if copied == 0 {
 		return text

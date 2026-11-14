@@ -25,6 +25,12 @@ import (
 // share a live connection's four addresses, so it is never an answer.
 const tcpTimeWait = "06"
 
+// socketGone says whether a row's socket has no file left (its inode, the tenth column, is 0): a client that closed
+// before it was looked up — a FIN_WAIT2 timewait the kernel prints as 05, or an orphaned FIN_WAIT1, CLOSING or LAST_ACK
+// socket. The kernel prints uid 0 for such a row whoever opened the socket, so it is never an answer: read as root, it
+// would let another account's closed connection through (ANOTHER_ACCOUNT_AND_LIMITS).
+func socketGone(fields []string) bool { return len(fields) > 9 && fields[9] == "0" }
+
 // uidInProcNet finds, in one /proc/net/tcp or /proc/net/tcp6 table, the socket whose local end is peer and whose remote
 // end is us, and returns the account that owns it. Two live rows that disagree about the owner are no answer.
 func uidInProcNet(table []byte, peer, us *net.TCPAddr, order binary.ByteOrder) (int, bool) {
@@ -36,7 +42,7 @@ func uidInProcNet(table []byte, peer, us *net.TCPAddr, order binary.ByteOrder) (
 		if len(fields) < 8 || !strings.HasSuffix(fields[0], ":") {
 			continue // the heading, or a row this reader does not know
 		}
-		if fields[3] == tcpTimeWait {
+		if fields[3] == tcpTimeWait || socketGone(fields) {
 			continue
 		}
 		if !procNetEndIs(fields[1], peer, order) || !procNetEndIs(fields[2], us, order) {
@@ -137,7 +143,14 @@ func procNetEnd(column string, order binary.ByteOrder) (net.IP, int, bool) {
 // listenAddressesInProcNet is every local address a LISTENING socket on port is bound to, in one /proc/net/tcp or
 // /proc/net/tcp6 table.
 func listenAddressesInProcNet(table []byte, port int, order binary.ByteOrder) ([]net.IP, bool) {
-	var addresses []net.IP
+	listeners, ok := listenersInProcNet(table, port, order)
+	return addressesOf(listeners), ok
+}
+
+// listenersInProcNet is every LISTENING socket on port in one /proc/net/tcp or tcp6 table, with the account that made
+// it.
+func listenersInProcNet(table []byte, port int, order binary.ByteOrder) ([]Listener, bool) {
+	var listeners []Listener
 	scanner := bufio.NewScanner(bytes.NewReader(table))
 	scanner.Buffer(make([]byte, 0, 4096), 1<<20)
 	for scanner.Scan() {
@@ -149,10 +162,11 @@ func listenAddressesInProcNet(table []byte, port int, order binary.ByteOrder) ([
 		if !ok || at != port {
 			continue
 		}
-		addresses = append(addresses, address)
+		uid, err := strconv.Atoi(fields[7])
+		listeners = append(listeners, Listener{IP: address, UID: uid, Known: err == nil && uid >= 0})
 	}
 	if scanner.Err() != nil {
 		return nil, false
 	}
-	return addresses, true
+	return listeners, true
 }

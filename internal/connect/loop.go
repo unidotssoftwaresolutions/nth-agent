@@ -16,6 +16,7 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/liveview"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/localconn"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/ui"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/wda"
 )
@@ -111,6 +112,12 @@ type Config struct {
 	// Phones is the set of phones the drive tunnel will start a session on, rewritten from the rows every tick publishes
 	// (only rows for this machine's own phones; a cloud row is the hub's). nil = this build keeps no such set.
 	Phones *allowed.Phones
+	// WdaPortListeners names every listener on a port and who made it, for the question asked of an iPhone's WebDriverAgent
+	// port as its session starts (wdaports.go). nil = the kernel's answer. A TEST SEAM.
+	WdaPortListeners func(port int) ([]netcap.Listener, bool)
+	// HoldPhone claims one phone for this connect, on this whole machine, before it is offered (claims.go): release gives it
+	// back, and an error is a phone another connect holds. nil = no claim (state.HoldPhone in production).
+	HoldPhone func(serial string) (release func(), err error)
 	// HintAfter is how long a platform may stay could-not-ask before the narration offers --skip once
 	// (default DefaultHintAfter). Now is the clock seam; nil = time.Now.
 	HintAfter time.Duration
@@ -226,6 +233,10 @@ func Run(ctx context.Context, cfg Config) error {
 	if narrator.hintAfter <= 0 {
 		narrator.hintAfter = DefaultHintAfter
 	}
+	// ONE PHONE, ONE connect ON THE MACHINE (claims.go): what the probes offer is what this connect holds.
+	probes, releaseClaims := claimed(cfg.Probes, cfg.HoldPhone, narrator)
+	defer releaseClaims()
+	cfg.Probes = probes
 
 	narrator.progress(ui.MarkNote, "connecting to %s", cfg.Client.BaseURL)
 
@@ -391,7 +402,7 @@ func offerPhones(cfg Config, report farm.Report) {
 			udids = append(udids, device.Descriptor.Udid)
 		}
 	}
-	cfg.Phones.Offer(udids)
+	cfg.Phones.OfferHeld(udids, WdaPortGuard(declaredWdaPorts(report), cfg.WdaPortListeners))
 }
 
 // offerMirrors tells the drive tunnel which mirrors it may stream: exactly the ports on the rows this report

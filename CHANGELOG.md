@@ -45,6 +45,68 @@ example: run it through `npx` with that name in front, the way the README shows.
   declare a kilobyte and unpack to a megabyte, and a size near 2^63 could wrap the total. Each file is now unpacked on the
   way into nothing, never written, and must be exactly its declared size, with its checksum; the total is checked before
   each file is added.
+- **A farm on this computer is sent nothing unless you run it.** A plain-`http` farm is allowed only on this computer's
+  loopback, where the token never crosses a network; but every account here can listen there, and one holding the farm's
+  port while your local farm was down was sent your workspace token. The farm's calls and the tunnel are now dialled the way
+  Appium is, and the connection is closed before a byte is written when another account runs what took it.
+- **On a Mac, a program behind a socket root made is not taken for yours.** The agent let root's programs serve as your
+  Appium, adb server or live view, but the system names the account that made a socket, not the one serving it, and on a
+  Mac root's launchd makes the listening socket any account's own LaunchAgent asks for. On Linux and Windows, where only an
+  administrator can hand on such a socket and adb started with sudo runs as root, root is still used.
+- **On Windows, a socket's owner is the process that made it.** The agent read a socket's account from whichever process
+  holds its recorded process id now. When the process that made it has ended, Windows can give that id to another one; a
+  process that started after the socket was made is no longer taken for its owner.
+- **On Linux, a connection that has already closed is not let in as root.** The kernel prints a closed connection's row with
+  no owner, which read as root's, so another account could reach a running capture proxy by closing its end before it was
+  asked about. Such a row is no answer now, and the connection is refused.
+- **adb's server is asked about on every address adb reaches.** The agent asked who ran adb's server on 127.0.0.1 only, and
+  read a connection that timed out as no server at all. adb's client reaches localhost on `::1` too, and the address the
+  environment names, so every listener there is asked about, from the system's own table; one that will not take the
+  agent's connection is refused, and an answer given when no server of yours was listening afterwards is not used.
+- **An emulator is offered only when you run it.** An emulator was offered because adb named it `emulator-5554`, and any
+  account here can make this computer's adb server list a program of its own under that name. Its two ports must now be
+  yours; one another account holds is shown as not usable, in words, and no flag offers it. Its console is never asked for
+  the emulator's name either, since adb sends your console's token to whatever listens there.
+- **An iPhone's WebDriverAgent port is yours, and its alone.** The port declared for each iPhone is now one no other
+  account holds, checked again as each session starts, and never the same as another phone's: two phones could be declared
+  one port, and the farm pins each session to it. A session that names another phone's port is refused.
+- **One phone, one `connect`, on the whole computer.** One `connect` per account held its own state folder, which follows
+  `HOME`, so a second `connect` started with another `HOME`, or one of another account sharing adb or the Apple device
+  daemon, could offer the same phone under a second identity. Each phone is now claimed on the computer itself before it is
+  offered, and one another `connect` holds is named in your terminal and not offered.
+- **Capture is not turned on where its key would leave this computer.** On a network home, the capture's key would be made
+  on a file server and copied with its backups. `capture enable` now refuses a state folder on network storage, and says
+  so.
+- **A body is masked whole before it is cut.** A request or answer body was cut to its preview first, so a credential the
+  cut fell inside was read as an unfinished value and kept in part. It is masked whole now, then cut.
+- **A capture keeps what a real app would make it keep.** A host's answer with more headers than a browser accepts
+  (256 KiB) is not read, and the phone is told why; a header value longer than any real one (64 KiB) is left out whole rather
+  than cut and then masked; at most 4096 hosts that refuse the capture's certificate are remembered, and the record says when
+  that is reached; and masking reads each value once, so a text built of nested pairs no longer costs the square of its
+  length.
+- **adb's answers are read up to a bound.** adb's output was held whole, however long, every tick. Past 1 MiB, more than a
+  hundred times any answer the agent reads, adb is stopped and its answer is not used.
+- **Handback questions are answered a few at a time.** Each of the farm's capture handback questions started its own work on
+  this computer, adb included, with nothing counting how many ran at once. Eight are answered at once now; one past that is
+  answered with a 503 in words, and the farm asks it again.
+- **A refused request holds nothing but its id.** When the farm sent more requests than the agent keeps waiting, each refusal
+  waited for room to be sent while holding the whole request, body and all. A refusal now holds the request's id and its
+  sentence, and at most 512 wait at once; past that a request goes unanswered and the farm's own deadline fails it.
+- **What waits to be sent to the farm has a ceiling.** The agent queued whatever it was asked to send, so a farm that read
+  next to nothing while it kept asking could make it hold any amount. Past 512 MiB the agent ends the tunnel, says why, and
+  dials again. A frame whose id is longer than the farm's own ids is skipped rather than echoed.
+- **Answers on their way to the farm share one limit.** Each session held its whole answer while it waited for the farm to
+  read, and nothing counted them together. Answers held at once are now limited to 256 MiB across the agent; one past that is
+  answered with a 502 in words, and the tunnel stays up.
+- **A hub answer is measured after the key is masked.** Replacing a short BrowserStack user name with the mask can make an
+  answer longer, and the size was checked before that. It is checked again after, and no frame larger than one tunnel message
+  is ever written: the farm would have ended the tunnel for every lease on the machine.
+- **A create the farm has given up on is not started.** Session creates take turns on a machine, and one that waited behind a
+  slow create past the farm's 190 seconds was still sent to Appium, starting a session no lease held. It is now left, and
+  your terminal says so.
+- **Limits hold across a reconnect.** A request still running when the tunnel dropped was counted by nothing, so creates were
+  no longer one at a time and requests in flight had no limit. One create at a time and at most 512 requests in flight now
+  hold for the whole agent, whichever tunnel they came on.
 
 ## 0.5.6
 

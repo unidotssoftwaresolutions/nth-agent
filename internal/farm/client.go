@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/localconn"
 )
 
 // CallStatus is how one farm call resolved — each of the four wire answers gets its own name, so the
@@ -60,6 +62,9 @@ type Client struct {
 	// refuses to carry the header to any hop that rule was never checked against.
 	Token string
 	HTTP  *http.Client
+	// Owner names the account whose program took a connection to a farm on this machine's loopback; nil = the kernel's
+	// answer (internal/localconn). A TEST SEAM: no flag or variable reaches it.
+	Owner localconn.Owner
 }
 
 // HeartbeatWork is what the farm asked of us. This slice cannot perform any of it — the loop prints

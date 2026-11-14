@@ -10,6 +10,7 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/android"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/ios"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 )
 
 // ParseSkip turns `--skip` values (comma-separated, repeatable) into the platforms NOT to ask about.
@@ -44,7 +45,8 @@ func ParseSkip(values []string) (map[inventory.Platform]bool, error) {
 // paid for, now living where the probes are built).
 //
 // offerUncabled is the customer's answer to inventory.OfferUncabledFlag: false offers only phones on this machine's USB
-// cable and names the others as left out; true offers emulators and phones reached over the network too.
+// cable and the emulators this account runs here, and names the others as left out; true offers phones reached over the
+// network too. An emulator another account runs is never offered (internal/android/emulators.go).
 func ProbeSet(skip map[inventory.Platform]bool, run android.Runner, list ios.Lister, perProbeBudget time.Duration, offerUncabled bool) func(ctx context.Context) []inventory.Outcome {
 	return ProbeSetFor(runtime.GOOS, skip, run, list, perProbeBudget, offerUncabled)
 }
@@ -52,6 +54,12 @@ func ProbeSet(skip map[inventory.Platform]bool, run android.Runner, list ios.Lis
 // ProbeSetFor is ProbeSet on the system named: on Windows the iOS probe is never run (ios.NeedsAMac). A TEST SEAM for the
 // system; production passes runtime.GOOS.
 func ProbeSetFor(system string, skip map[inventory.Platform]bool, run android.Runner, list ios.Lister, perProbeBudget time.Duration, offerUncabled bool) func(ctx context.Context) []inventory.Outcome {
+	return ProbeSetAsking(system, skip, run, list, perProbeBudget, offerUncabled, nil)
+}
+
+// ProbeSetAsking is ProbeSetFor with the kernel's answer about who holds an emulator's ports replaced (android.Probe's
+// EmulatorPorts; nil = the kernel's). A TEST SEAM.
+func ProbeSetAsking(system string, skip map[inventory.Platform]bool, run android.Runner, list ios.Lister, perProbeBudget time.Duration, offerUncabled bool, emulatorPorts func(int) ([]netcap.Listener, bool)) func(ctx context.Context) []inventory.Outcome {
 	withBudget := func(ctx context.Context, probe func(context.Context) inventory.Outcome) inventory.Outcome {
 		budgeted, cancel := context.WithTimeout(ctx, perProbeBudget)
 		defer cancel()
@@ -64,7 +72,8 @@ func ProbeSetFor(system string, skip map[inventory.Platform]bool, run android.Ru
 	return func(ctx context.Context) []inventory.Outcome {
 		return []inventory.Outcome{
 			withBudget(ctx, func(c context.Context) inventory.Outcome {
-				return android.Probe{Run: run, Enabled: !skip[inventory.Android], Confirmations: confirmations, OfferUncabled: offerUncabled}.Outcome(c)
+				return android.Probe{Run: run, Enabled: !skip[inventory.Android], Confirmations: confirmations, OfferUncabled: offerUncabled,
+					EmulatorPorts: emulatorPorts}.Outcome(c)
 			}),
 			withBudget(ctx, func(c context.Context) inventory.Outcome {
 				return ios.Probe{List: list, Enabled: !skip[inventory.IOS], OfferUncabled: offerUncabled, System: system}.Outcome(c)

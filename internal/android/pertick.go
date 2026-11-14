@@ -58,7 +58,7 @@ var PerTickReads = []PerTickRead{
 		Value:   "getprop ro.boot.qemu.avd_name",
 		Cached:  false,
 		Changes: "nothing short of another emulator on the same console port, which means this one stopped and left the attached set",
-		Cost:    "~64ms for each emulator, and nothing for a phone, which is never asked; an emulator too old to set it is asked once more, through its console (adb emu avd name)",
+		Cost:    "~64ms for each emulator, and nothing for a phone, which is never asked; an emulator too old to set it shows no name (its console is never asked)",
 	},
 }
 

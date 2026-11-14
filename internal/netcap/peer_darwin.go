@@ -43,6 +43,12 @@ func listenerUID(at *net.TCPAddr) (int, bool) {
 
 // listenAddresses asks this Mac's kernel where each listener on port is bound (see peer_pcblist.go).
 func listenAddresses(port int) ([]net.IP, bool) {
+	listeners, ok := listenerOwners(port)
+	return addressesOf(listeners), ok
+}
+
+// listenerOwners asks this Mac's kernel for every listener on port, and the account that made each.
+func listenerOwners(port int) ([]Listener, bool) {
 	for attempt := 0; attempt < 3; attempt++ {
 		list, err := syscall.Sysctl("net.inet.tcp.pcblist64")
 		if errors.Is(err, syscall.ENOMEM) {
@@ -51,7 +57,7 @@ func listenAddresses(port int) ([]net.IP, bool) {
 		if err != nil {
 			return nil, false
 		}
-		return listenAddressesInPCBList([]byte(list), port)
+		return listenersInPCBList([]byte(list), port)
 	}
 	return nil, false
 }

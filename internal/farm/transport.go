@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/localconn"
 )
 
 // ValidateBaseURL refuses a farm URL whose transport would expose the workspace token — BEFORE any
@@ -62,6 +65,9 @@ func (c *Client) httpClient() *http.Client {
 	// NO PROXY FOR PLAIN HTTP: a caller that names no transport gets Go's default one with the farm's proxy rule (Proxy).
 	if client.Transport == nil {
 		client.Transport = farmTransport
+		if c.Owner != nil {
+			client.Transport = transportAskingOwner(c.Owner)
+		}
 	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("the farm answered with a redirect to %s — this API never redirects, so the request was refused rather than carrying the token to a hop nobody checked", req.URL)
@@ -81,8 +87,14 @@ func Proxy(request *http.Request) (*url.URL, error) {
 }
 
 // farmTransport is Go's default transport with Proxy as its proxy rule — one, so its connections are reused across calls.
-var farmTransport = func() *http.Transport {
+// AND A FARM ON THIS MACHINE'S LOOPBACK IS DIALLED ONLY WHEN THIS ACCOUNT RUNS IT (loopback.go).
+var farmTransport = transportAskingOwner(nil)
+
+// transportAskingOwner is farmTransport whose loopback owner question owner answers (nil = the kernel's): a test seam.
+func transportAskingOwner(owner localconn.Owner) *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = Proxy
+	dialer := &net.Dialer{Timeout: DialTimeout, KeepAlive: 30 * time.Second}
+	transport.DialContext = OnLoopbackOnlyThisAccount(dialer.DialContext, owner)
 	return transport
-}()
+}

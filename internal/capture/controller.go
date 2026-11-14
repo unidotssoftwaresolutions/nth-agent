@@ -343,6 +343,7 @@ func (c *Controller) Start(ctx context.Context, lease, serial string) {
 		return
 	}
 	s.rec = rec
+	rec.WhenBounded(func(what string) { c.sayOnce("bounded "+lease, "network capture on phone %s: %s", serial, what) })
 	proxy := netcap.NewProxy(netcap.Options{CA: ca, Recording: rec, UpstreamRoots: c.cfg.UpstreamRoots, Now: c.cfg.Now,
 		ReachLocal: c.cfg.ReachLocal, PeerOwner: c.cfg.PeerOwner, Refused: func(uid int, found bool) {
 			if found {

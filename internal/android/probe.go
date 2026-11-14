@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 )
 
 // Runner is THE process seam: tests stub it, so no test needs a running adb server or a phone
@@ -26,6 +27,9 @@ type Probe struct {
 	// default, offers only phones on a USB cable, and the emulators running on this machine (LocalEmulator), and names the
 	// others as left out.
 	OfferUncabled bool
+	// EmulatorPorts names every listener on a port and who made it — the question an emulator's ports are asked before
+	// it is offered (emulators.go). nil = the kernel's answer (netcap.ListenerOwnersOn). A TEST SEAM.
+	EmulatorPorts func(port int) ([]netcap.Listener, bool)
 }
 
 func (p Probe) Outcome(ctx context.Context) inventory.Outcome {
@@ -47,6 +51,7 @@ func (p Probe) Outcome(ctx context.Context) inventory.Outcome {
 				"and if it says the server didn't ACK, run `adb kill-server && adb start-server`.")
 	}
 	offerable, unusable, uncabled := parse(out)
+	offerable, unusable = p.emulatorsThisAccountRuns(offerable, unusable)
 	if p.OfferUncabled {
 		for _, d := range uncabled {
 			offerable = append(offerable, inventory.Offerable{ID: d.ID})
@@ -93,23 +98,14 @@ func (p Probe) describe(ctx context.Context, d inventory.Offerable) inventory.Of
 	return d
 }
 
-// avdName is an emulator's virtual device name, as the emulator says it: its boot property, or, from an older emulator
-// that sets none, its console's answer through adb (`adb -s <serial> emu avd name`, whose last line is "OK"). "" when
-// neither answered.
+// avdName is an emulator's virtual device name, as the emulator says it: its boot property. "" when it set none.
+//
+// ITS CONSOLE IS NEVER ASKED (ANOTHER_ACCOUNT_AND_LIMITS). An older emulator that sets no property was asked once more
+// through `adb emu avd name` — and adb's client sends this account's emulator console token to whatever listens on the
+// console's port before it asks. The name is shown only in this machine's own devices table, so it is not worth the
+// token.
 func (p Probe) avdName(ctx context.Context, serial string) string {
-	if name := p.getprop(ctx, serial, "ro.boot.qemu.avd_name"); name != "" {
-		return name
-	}
-	out, err := p.Run(ctx, "-s", serial, "emu", "avd", "name")
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(out, "\n") {
-		if line = strings.TrimSpace(line); line != "" && line != "OK" {
-			return line
-		}
-	}
-	return ""
+	return p.getprop(ctx, serial, "ro.boot.qemu.avd_name")
 }
 
 func (p Probe) getprop(ctx context.Context, serial, prop string) string {
@@ -216,14 +212,15 @@ func parse(out string) ([]inventory.Offerable, []inventory.Unusable, []inventory
 	return offerable, unusable, uncabled
 }
 
-// LocalEmulator says whether serial is an emulator running on this machine: `emulator-<console port>`, the console port
-// even and in adb's own range (5554 to 5682, 64 emulators).
+// LocalEmulator says whether serial names an emulator on this machine: `emulator-<console port>`, the console port even
+// and in adb's own range (5554 to 5682, 64 emulators).
 //
-// WHY THE NAME IS ENOUGH. adb gives a transport that name only for an emulator it found on ITS OWN machine's loopback —
-// it looks for one on 127.0.0.1 at each console port's neighbour, and a starting emulator announces itself to the local
-// server — whose console is therefore 127.0.0.1:<port> on that machine. And the server this agent asks is always this
-// machine's own, on loopback, run by this account (adbserver.go: one anywhere else is not used). An emulator on another
-// machine, reached with `adb connect`, is named by its host and port, and is left out like any network phone.
+// THE NAME SAYS WHERE, NOT WHOSE. adb gives a transport that name only for an emulator it found on ITS OWN machine's
+// loopback — it looks for one on 127.0.0.1 at each console port's neighbour, and a starting emulator announces itself
+// to the local server — and the server this agent asks is always this machine's own (adbserver.go). An emulator on
+// another machine, reached with `adb connect`, is named by its host and port, and is left out like any network phone.
+// But every account on this machine can listen on 127.0.0.1, and adb does not ask who; so before an emulator is
+// offered, who holds its two ports is asked too (emulators.go).
 func LocalEmulator(serial string) bool {
 	port, ok := strings.CutPrefix(serial, "emulator-")
 	if !ok || port == "" || len(port) > 5 {

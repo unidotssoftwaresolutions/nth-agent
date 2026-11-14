@@ -95,12 +95,12 @@ type Proxy struct {
 	reverse  *httputil.ReverseProxy
 	dialer   *net.Dialer
 
-	mu          sync.Mutex
-	listener    net.Listener
-	server      *http.Server
-	conns       map[net.Conn]struct{}
-	passThrough map[string]bool
-	closed      bool
+	mu                sync.Mutex
+	listener          net.Listener
+	server            *http.Server
+	conns             map[net.Conn]struct{}
+	passThrough       map[string]bool
+	closed, saidBound bool
 }
 
 // quietLog is where the standard library's own messages go: nowhere. They name addresses this agent masks.
@@ -131,7 +131,7 @@ func NewProxy(opts Options) *Proxy {
 		ResponseHeaderTimeout: opts.UpstreamHeaderTimeout,
 		ExpectContinueTimeout: time.Second,
 		MaxIdleConns:          64,
-		IdleConnTimeout:       30 * time.Second,
+		IdleConnTimeout:       30 * time.Second, MaxResponseHeaderBytes: MaxResponseHeaderBytes, // limits.go
 	}
 	p.reverse = &httputil.ReverseProxy{
 		Rewrite:        p.rewrite,
@@ -162,7 +162,7 @@ func (p *Proxy) Listen(port uint16) (string, error) {
 		Handler:           http.HandlerFunc(p.serveOuter),
 		ReadHeaderTimeout: readHeaderBound,
 		IdleTimeout:       idleBound,
-		ErrorLog:          quietLog,
+		ErrorLog:          quietLog, MaxHeaderBytes: MaxRequestHeaderBytes, // limits.go
 	}
 	return listener.Addr().String(), nil
 }
@@ -348,7 +348,7 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 			}
 			p.mu.Lock()
 			p.passThrough[hostPort] = true
-			p.mu.Unlock()
+			p.unlockKeepingBound(hostPort) // too many hosts, or a name no host has, is forgotten again (limits.go)
 			p.opts.Recording.RecordRefusal(hostPort)
 		}
 		return
@@ -542,6 +542,8 @@ func describeUpstreamFailure(err error) string {
 		return "the host's own certificate did not verify, so the capture proxy did not send the request on"
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return "the host refused the connection"
+	case headersTooLarge(err):
+		return HeadersTooLarge()
 	default:
 		return "the request to the host failed before it was answered"
 	}

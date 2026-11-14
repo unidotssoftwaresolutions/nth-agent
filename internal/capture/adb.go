@@ -47,21 +47,30 @@ func NewRealAdb(owner localconn.Owner) Adb {
 func realAdb(ctx context.Context, owner localconn.Owner, args ...string) (string, string, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, adbTimeout)
 	defer cancel()
-	if err := android.CheckServer(ctx, os.Getenv, owner); err != nil {
+	guard := android.ServerGuard{Owner: owner}
+	if err := guard.Before(ctx, os.Getenv); err != nil {
 		return "", "", -1, err
 	}
 	stdout, stderr, exit, err := execAdb(ctx, args...)
-	if checkErr := android.CheckServer(ctx, os.Getenv, owner); checkErr != nil {
+	if checkErr := guard.After(ctx, os.Getenv, err == nil && exit == 0); checkErr != nil {
 		return "", "", -1, checkErr
 	}
 	return stdout, stderr, exit, err
 }
 
+// execAdb reads adb's two streams up to one bound between them (android.MaxAnswerBytes, ANOTHER_ACCOUNT_AND_LIMITS):
+// past it adb is stopped and nothing it printed is used.
 func execAdb(ctx context.Context, args ...string) (string, string, int, error) {
-	var stdout, stderr bytes.Buffer
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	bound := android.NewBoundedOutput(android.MaxAnswerBytes, stop)
+	stdout, stderr := &streamOf{bound: bound}, &streamOf{bound: bound}
 	command := exec.CommandContext(ctx, android.Program(), args...)
-	command.Stdout, command.Stderr = &stdout, &stderr
+	command.Stdout, command.Stderr = stdout, stderr
 	err := command.Run()
+	if bound.Over() {
+		return "", "", -1, android.TooLong()
+	}
 	var exitErr *exec.ExitError
 	switch {
 	case err == nil:
@@ -141,3 +150,20 @@ func adbFailure(exit int, stderr string) string {
 	}
 	return "adb exit " + strconv.Itoa(exit) + ": " + said
 }
+
+// streamOf keeps one of adb's streams, counted against a bound both share.
+type streamOf struct {
+	bound *android.BoundedOutput
+	kept  bytes.Buffer
+}
+
+func (s *streamOf) Write(p []byte) (int, error) {
+	before := s.bound.Over()
+	n, err := s.bound.Write(p)
+	if !before && !s.bound.Over() {
+		s.kept.Write(p)
+	}
+	return n, err
+}
+
+func (s *streamOf) String() string { return s.kept.String() }

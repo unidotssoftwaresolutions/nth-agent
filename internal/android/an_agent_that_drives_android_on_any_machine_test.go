@@ -112,8 +112,11 @@ func emulatorRunner(avdProp, consoleName string) android.Runner {
 	}
 }
 
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the emulator's two ports are this account's (EmulatorPorts), and an emulator
+// too old to set the property shows no name, because its console is never asked. WAS: no question of who runs it, and
+// the older emulator named through `adb emu avd name`.
 func TestAnEmulatorOnThisMachineIsOfferedAsAnEmulatorByItsAvdName(t *testing.T) {
-	outcome := android.Probe{Run: emulatorRunner("Pixel_8_API_35", ""), Enabled: true}.Outcome(context.Background())
+	outcome := android.Probe{Run: emulatorRunner("Pixel_8_API_35", ""), Enabled: true, EmulatorPorts: thisAccountRunsEveryEmulator}.Outcome(context.Background())
 	offered := outcome.Offerable()
 	if len(offered) != 1 || offered[0].ID != "emulator-5554" || !offered[0].Emulator || offered[0].AVD != "Pixel_8_API_35" ||
 		offered[0].Model != "sdk_gphone64_arm64" {
@@ -127,20 +130,22 @@ func TestAnEmulatorOnThisMachineIsOfferedAsAnEmulatorByItsAvdName(t *testing.T) 
 		t.Fatalf("the network serials are still left out:\n got %+v\nwant %+v", got, want)
 	}
 
-	// An emulator too old to set the property says its name through its console.
-	older := android.Probe{Run: emulatorRunner("", "Nexus_5_API_29"), Enabled: true}.Outcome(context.Background())
-	if got := older.Offerable(); len(got) != 1 || got[0].AVD != "Nexus_5_API_29" {
-		t.Fatalf("the console's answer names an older emulator: %+v", got)
+	// An emulator too old to set the property is offered with no name: its console would have said it, and is not
+	// asked.
+	older := android.Probe{Run: emulatorRunner("", "Nexus_5_API_29"), Enabled: true, EmulatorPorts: thisAccountRunsEveryEmulator}.Outcome(context.Background())
+	if got := older.Offerable(); len(got) != 1 || got[0].AVD != "" || !got[0].Emulator {
+		t.Fatalf("an older emulator is offered with no name, its console not asked: %+v", got)
 	}
 	// One that says neither is still offered, as an emulator, with no name.
-	silent := android.Probe{Run: emulatorRunner("", ""), Enabled: true}.Outcome(context.Background())
+	silent := android.Probe{Run: emulatorRunner("", ""), Enabled: true, EmulatorPorts: thisAccountRunsEveryEmulator}.Outcome(context.Background())
 	if got := silent.Offerable(); len(got) != 1 || !got[0].Emulator || got[0].AVD != "" {
 		t.Fatalf("an emulator that names itself nowhere is still offered: %+v", got)
 	}
 }
 
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the emulator's ports are this account's (EmulatorPorts). WAS: not asked.
 func TestTheFlagStillOffersTheNetworkPhones(t *testing.T) {
-	outcome := android.Probe{Run: emulatorRunner("Pixel_8_API_35", ""), Enabled: true, OfferUncabled: true}.Outcome(context.Background())
+	outcome := android.Probe{Run: emulatorRunner("Pixel_8_API_35", ""), Enabled: true, OfferUncabled: true, EmulatorPorts: thisAccountRunsEveryEmulator}.Outcome(context.Background())
 	if got := ids(outcome.Offerable()); !reflect.DeepEqual(got, []string{"emulator-5554", "192.168.1.20:5555", "adb-R5CT30ABCDE-AbCdEf._adb-tls-connect._tcp"}) ||
 		len(outcome.LeftOut()) != 0 {
 		t.Fatalf("with %s the network phones are offered too: %v, left out %v", inventory.OfferUncabledFlag, got, outcome.LeftOut())

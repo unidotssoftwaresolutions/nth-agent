@@ -353,7 +353,7 @@ func runDoctor(inv *invocation, stdout, stderr io.Writer) int {
 		// WHAT IS LISTENING ON ONE LOCAL PORT, in WebDriverAgent's own terms — so the collision check can tell a
 		// stranger holding the port from Appium's own forward holding it for us.
 		func(ctx context.Context, port uint16) wda.RunnerStatus {
-			return wda.ReadStatus(ctx, &http.Client{Timeout: wda.ProbeTimeout}, fmt.Sprintf("http://127.0.0.1:%d", port))
+			return wdaPortStatus(ctx, &http.Client{Timeout: wda.ProbeTimeout}, port, nil) // the kernel is asked first (wdaports.go)
 		})
 	report := doctor.Diagnose(ctx, env, outcomes)
 	// NETWORK CAPTURE ON THIS MACHINE, read from its state folder alone — the certificate, never the key.
@@ -658,7 +658,7 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 	// the same thing, which is the whole reason this slice exists.
 	chooser := &wda.PortChooser{
 		Probe: func(ctx context.Context, port uint16) wda.RunnerStatus {
-			return wda.ReadStatus(ctx, wdaClient, fmt.Sprintf("http://127.0.0.1:%d", port))
+			return wdaPortStatus(ctx, wdaClient, port, nil) // the kernel is asked first (wdaports.go)
 		},
 	}
 	probeWda := func(ctx context.Context, udid string, port uint16) wda.RunnerStatus {
@@ -739,7 +739,7 @@ func runConnect(inv *invocation, stdout, stderr io.Writer) int {
 		// never runs it. Without one the node says it cannot stream and no phone carries a mirror port.
 		LiveView: liveViewJudge(context.Background(), &liveview.Chooser{}),
 		Mirrors:  mirrors,
-		Phones:   phones,
+		Phones:   phones, HoldPhone: state.HoldPhone, // and each phone is claimed on the whole machine before it is offered
 
 		// WHETHER THIS MACHINE CAPTURES is a registration fact; the loop registers anew when it changes.
 		Capture: captureController,

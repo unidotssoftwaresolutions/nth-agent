@@ -2,6 +2,7 @@ package connect_test
 
 import (
 	"context"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/connect"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/inventory"
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/ios"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 )
 
 // iOS ON WINDOWS (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the probe set never asks usbmuxd there, and connect says
@@ -25,7 +27,12 @@ func TestOnWindowsConnectSaysOnceThatIOSNeedsAMac(t *testing.T) {
 		}
 		return "", nil
 	}
-	probes := connect.ProbeSetFor("windows", map[inventory.Platform]bool{}, adb, list, time.Second, false)
+	// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the emulator's two ports are this account's (ProbeSetAsking). WAS:
+	// ProbeSetFor, which asked nobody who runs it.
+	ours := func(port int) ([]netcap.Listener, bool) {
+		return []netcap.Listener{{IP: net.IPv4(127, 0, 0, 1), UID: netcap.ThisAccount(), Known: true}}, true
+	}
+	probes := connect.ProbeSetAsking("windows", map[inventory.Platform]bool{}, adb, list, time.Second, false, ours)
 
 	outcomes := probes(context.Background())
 	if asked != 0 || len(outcomes) != 2 || outcomes[1].NotHereBecause() != ios.NeedsAMac {

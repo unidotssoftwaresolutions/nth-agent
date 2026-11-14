@@ -43,9 +43,10 @@ func ids(offerable []inventory.Offerable) []string {
 
 // AMENDED (AN_AGENT_THAT_DRIVES_ANDROID_ON_ANY_MACHINE): the emulator running on this machine is offered now — the person's
 // own virtual device, not a phone that left the desk. The two network phones are still left out, and asked nothing.
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the emulator's ports are this account's (EmulatorPorts). WAS: not asked.
 func TestOnlyAPhoneOnTheCableIsOfferedByDefault(t *testing.T) {
 	var asked []string
-	outcome := android.Probe{Run: listingRunner(fourTransports, &asked), Enabled: true}.Outcome(context.Background())
+	outcome := android.Probe{Run: listingRunner(fourTransports, &asked), Enabled: true, EmulatorPorts: thisAccountRunsEveryEmulator}.Outcome(context.Background())
 
 	if got := ids(outcome.Offerable()); !reflect.DeepEqual(got, []string{"DUMMYUSB01", "emulator-5554"}) {
 		t.Fatalf("the phone on the cable and the emulator on this machine are offered, got %v", got)
@@ -67,9 +68,10 @@ func TestOnlyAPhoneOnTheCableIsOfferedByDefault(t *testing.T) {
 	}
 }
 
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the emulator's ports are this account's (EmulatorPorts). WAS: not asked.
 func TestTheFlagOffersEveryTransport(t *testing.T) {
 	var asked []string
-	outcome := android.Probe{Run: listingRunner(fourTransports, &asked), Enabled: true, OfferUncabled: true}.Outcome(context.Background())
+	outcome := android.Probe{Run: listingRunner(fourTransports, &asked), Enabled: true, OfferUncabled: true, EmulatorPorts: thisAccountRunsEveryEmulator}.Outcome(context.Background())
 	if got := ids(outcome.Offerable()); len(got) != 4 || len(outcome.LeftOut()) != 0 {
 		t.Fatalf("with %s every transport is offered, got %v and left out %v", inventory.OfferUncabledFlag, got, outcome.LeftOut())
 	}

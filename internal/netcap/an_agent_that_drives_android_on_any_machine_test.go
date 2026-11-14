@@ -22,6 +22,11 @@ type fakeOwners struct {
 	accounts map[uint32]string
 	me       string
 	cut      bool // the table's count claims a row it does not hold
+	// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): when each socket was made and when each process started, as Windows' clock
+	// counts them (0 = the defaults below: every socket made at 2000, every process started at 1000, so each process is
+	// older than its sockets). WAS: rows and accounts only.
+	created uint64
+	started map[uint32]uint64
 }
 
 // row6 is one socket of the IPv6 table: its addresses are 16 bytes.
@@ -32,9 +37,17 @@ type row6 struct {
 	pid                   uint32
 }
 
+// table writes Windows' TCP_TABLE_OWNER_MODULE_ALL answer. AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the count is followed
+// by four bytes of padding, and each row by the time its socket was made and 128 bytes of module information. WAS: the
+// TCP_TABLE_OWNER_PID_ALL rows (24 bytes, 56 for IPv6) right after the count.
 func (f fakeOwners) table(family int) ([]byte, error) {
+	created := f.created
+	if created == 0 {
+		created = 2000
+	}
+	tail := append(binary.LittleEndian.AppendUint64(nil, created), make([]byte, 128)...)
 	if family == afInet6 {
-		table := binary.LittleEndian.AppendUint32(nil, uint32(len(f.rows6)))
+		table := append(binary.LittleEndian.AppendUint32(nil, uint32(len(f.rows6))), 0, 0, 0, 0)
 		for _, r := range f.rows6 {
 			table = append(table, r.local.To16()...)
 			table = binary.LittleEndian.AppendUint32(table, 0) // scope id
@@ -44,6 +57,7 @@ func (f fakeOwners) table(family int) ([]byte, error) {
 			table = append(table, port(uint32(r.remotePort))...)
 			table = binary.LittleEndian.AppendUint32(table, r.state)
 			table = binary.LittleEndian.AppendUint32(table, r.pid)
+			table = append(table, tail...)
 		}
 		return table, nil
 	}
@@ -51,7 +65,7 @@ func (f fakeOwners) table(family int) ([]byte, error) {
 	if f.cut {
 		count++
 	}
-	table := binary.LittleEndian.AppendUint32(nil, count)
+	table := append(binary.LittleEndian.AppendUint32(nil, count), 0, 0, 0, 0)
 	for _, r := range f.rows {
 		table = binary.LittleEndian.AppendUint32(table, r[0])
 		table = append(table, ip4(r[1])...)
@@ -59,8 +73,17 @@ func (f fakeOwners) table(family int) ([]byte, error) {
 		table = append(table, ip4(r[3])...)
 		table = append(table, port(r[4])...)
 		table = binary.LittleEndian.AppendUint32(table, r[5])
+		table = append(table, tail...)
 	}
 	return table, nil
+}
+
+// startOf is when each process started: f.started, or 1000 (before every socket) when the test names none.
+func (f fakeOwners) startOf(pid uint32) (uint64, bool) {
+	if started, ok := f.started[pid]; ok {
+		return started, true
+	}
+	return 1000, true
 }
 
 func (f fakeOwners) accountOf(pid uint32) (string, bool) {

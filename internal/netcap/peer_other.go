@@ -12,3 +12,6 @@ func listenerUID(_ *net.TCPAddr) (int, bool) { return 0, false }
 
 // listenAddresses has no kernel table to read here.
 func listenAddresses(_ int) ([]net.IP, bool) { return nil, false }
+
+// listenerOwners has no kernel table to read here.
+func listenerOwners(_ int) ([]Listener, bool) { return nil, false }

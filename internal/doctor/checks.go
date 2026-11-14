@@ -307,7 +307,7 @@ func adbServer(env Env) Check {
 	c := Check{
 		Name: "adb server",
 		Need: "the Android probe's `adb devices` talks to adb's background server, and the agent uses it only when this " +
-			"account (or root) runs it (internal/android/adbserver.go)",
+			"account (or root, on Linux and Windows) runs it (internal/android/adbserver.go)",
 	}
 	address, refusal := adbServerPort, ""
 	if env.AdbServer != nil {
@@ -345,9 +345,13 @@ func adbServer(env Env) Check {
 	case uid == netcap.ThisAccount():
 		c.State = Satisfied
 		c.Detail = "listening on " + address + ", run by you"
-	case uid == 0:
+	case uid == 0 && netcap.MayServeThisAccount(0):
 		c.State = Satisfied
 		c.Detail = "listening on " + address + ", run by the administrator (root)"
+	case uid == 0:
+		c.State = Unreachable
+		c.Detail = "the server listening on " + address + " is behind a socket root made, " + netcap.RootServesNote + ", so the agent will not use it"
+		c.Remedy = android.ServerRemedy
 	default:
 		c.State = Unreachable
 		c.Detail = fmt.Sprintf("the server listening on %s runs as another account on this machine (uid %d), so the agent will not use it", address, uid)

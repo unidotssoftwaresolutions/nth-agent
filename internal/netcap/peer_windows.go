@@ -14,7 +14,7 @@ import (
 
 var procGetExtendedTcpTable = windows.NewLazySystemDLL("iphlpapi.dll").NewProc("GetExtendedTcpTable")
 
-const tcpTableOwnerPIDAll = 5 // TCP_TABLE_OWNER_PID_ALL
+const tcpTableOwnerModuleAll = 8 // TCP_TABLE_OWNER_MODULE_ALL: the PID table's rows, with when each socket was made
 
 // windowsOwners asks this Windows.
 type windowsOwners struct{}
@@ -26,7 +26,7 @@ func (windowsOwners) table(family int) ([]byte, error) {
 	for attempt := 0; attempt < 4; attempt++ {
 		buffer := make([]byte, size)
 		r, _, _ := procGetExtendedTcpTable.Call(uintptr(unsafe.Pointer(&buffer[0])), uintptr(unsafe.Pointer(&size)), 0,
-			uintptr(family), tcpTableOwnerPIDAll, 0)
+			uintptr(family), tcpTableOwnerModuleAll, 0)
 		switch windows.Errno(r) {
 		case 0:
 			return buffer, nil
@@ -63,6 +63,23 @@ func (windowsOwners) accountOf(pid uint32) (string, bool) {
 	return user.User.Sid.String(), true
 }
 
+// startOf reads when the process started (GetProcessTimes' creation time), with the same access accountOf asks for.
+func (windowsOwners) startOf(pid uint32) (uint64, bool) {
+	if pid == 0 {
+		return 0, false
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return 0, false
+	}
+	defer windows.CloseHandle(process)
+	var created, exited, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(process, &created, &exited, &kernel, &user); err != nil {
+		return 0, false
+	}
+	return uint64(created.HighDateTime)<<32 | uint64(created.LowDateTime), true
+}
+
 func (windowsOwners) thisAccount() (string, bool) {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
@@ -97,3 +114,6 @@ func ListenerProcess(port int) (pid int, program string, found bool) {
 
 // listenAddresses asks this Windows where each listener on port is bound (see peer_tcptable.go).
 func listenAddresses(port int) ([]net.IP, bool) { return listenAddressesInTable(windowsOwners{}, port) }
+
+// listenerOwners asks this Windows for every listener on port, and the account behind each (see peer_tcptable.go).
+func listenerOwners(port int) ([]Listener, bool) { return listenersInTable(windowsOwners{}, port) }

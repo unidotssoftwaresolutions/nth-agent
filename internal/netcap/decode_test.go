@@ -85,13 +85,16 @@ func TestABodyLargerThanWhatIsKeptIsAPreviewOfItsStart(t *testing.T) {
 }
 
 // A DECOMPRESSION BOMB costs the record at most what it keeps.
+//
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): readOneBody hands on the whole kept text, which is masked and only then cut to the
+// preview (previewOf); the preview is read here through that cut. WAS: readOneBody's text was the preview itself.
 func TestABombDecodesNoFurtherThanWhatIsKept(t *testing.T) {
 	bomb := gzipped(t, bytes.Repeat([]byte("a"), 64<<20))
 	body := readOneBody(bomb, int64(len(bomb)), "gzip", "text/plain")
 	if body.leftOut != "" {
 		t.Fatal(body.leftOut)
 	}
-	if units := len(utf16.Encode([]rune(body.text))); units != runnerBodyCap+1 {
+	if units := len(utf16.Encode([]rune(previewOf(body.text)))); units != runnerBodyCap+1 {
 		t.Fatalf("the preview is the runner's bound plus the character that crosses it (%d), got %d", runnerBodyCap+1, units)
 	}
 	if body.decodedSize != -1 {
@@ -102,10 +105,14 @@ func TestABombDecodesNoFurtherThanWhatIsKept(t *testing.T) {
 // THE PREVIEW IS COUNTED AS THE RUNNER COUNTS — UTF-16 code units — and cut after the character that crosses the runner's bound,
 // so a body longer than the bound reaches the runner longer than it, and is marked truncated there — emoji included, whose
 // characters are two units each and once ended a preview exactly at the bound.
+//
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the preview is readOneBody's whole text through previewOf, the cut made after
+// masking. WAS: readOneBody's text, cut before masking.
 func TestThePreviewIsTheRunnersBoundPlusOneCountedInItsUnits(t *testing.T) {
 	for _, unit := range []string{"a", "ş", "日", "😀"} {
 		text := strings.Repeat(unit, runnerBodyCap+10)
 		body := readOneBody([]byte(text), int64(len(text)), "", "text/plain; charset=utf-8")
+		body.text = previewOf(body.text)
 		units := len(utf16.Encode([]rune(body.text)))
 		if units <= runnerBodyCap || units > previewUnits {
 			t.Fatalf("%q: the preview must be longer than the runner's bound (%d) by one character at most, got %d", unit, runnerBodyCap, units)

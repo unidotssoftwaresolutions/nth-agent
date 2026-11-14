@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/android"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/netcap"
 )
 
 // A_MACHINE_THAT_STAYS_THE_CUSTOMERS — adb's server decides which phones this machine has, so the agent uses adb
@@ -95,6 +96,11 @@ func TestThisAccountsOwnAdbServerIsUsed(t *testing.T) {
 }
 
 // NOTHING LISTENING is the ordinary first run: adb starts its own server, as this account.
+//
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): the stub stands for an adb that starts its server, so once it has run, the
+// kernel's table shows a server of this account's on the port (ServerGuard.Listeners); an answer with no server of this
+// account's listening afterwards is not used. WAS: NewAdbRunner(anotherAccount), with nothing listening before or
+// after.
 func TestNoAdbServerYetIsNotARefusal(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake adb here is a #!/bin/sh script, which Windows cannot run; the ubuntu and macOS runs hold this, and the adb search on Windows is held by an_agent_that_drives_android_on_any_machine_test.go")
@@ -108,7 +114,14 @@ func TestNoAdbServerYetIsNotARefusal(t *testing.T) {
 	_ = listener.Close()
 	t.Setenv("ANDROID_ADB_SERVER_PORT", strconv.Itoa(port))
 
-	outcome := android.Probe{Run: android.NewAdbRunner(anotherAccount), Enabled: true}.Outcome(context.Background())
+	started := func(int) ([]netcap.Listener, bool) {
+		if !ran(mark) {
+			return nil, true
+		}
+		return []netcap.Listener{{IP: net.IPv4(127, 0, 0, 1), UID: netcap.ThisAccount(), Known: true}}, true
+	}
+	guard := android.ServerGuard{Owner: anotherAccount, Listeners: started}
+	outcome := android.Probe{Run: android.NewGuardedAdbRunner(guard), Enabled: true}.Outcome(context.Background())
 	if !outcome.IsAnswered() || !ran(mark) {
 		t.Fatalf("with no server listening adb starts this account's own: %s %q", outcome.KindString(), outcome.Reason())
 	}

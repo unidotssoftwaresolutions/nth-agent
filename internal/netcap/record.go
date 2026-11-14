@@ -18,7 +18,10 @@ type Recording struct {
 	now  func() time.Time
 
 	mu       sync.Mutex
-	refused  map[string]bool // hosts already recorded as refusing the certificate: each is recorded once
+	refused  map[string]bool // hosts already recorded as refusing the certificate: each is recorded once, up to bound
+	bound    int             // how many: MaxRememberedHosts (limits.go), or a test's — a TEST SEAM
+	bounded  func(string)    // hears, once, that one of the capture's bounds was met (WhenBounded)
+	saidOver bool
 	failure  error
 	recorded int // the requests taken, kept or left out (Seen)
 }
@@ -54,6 +57,11 @@ func (r *Recording) RecordRefusal(hostPort string) {
 		r.mu.Unlock()
 		return
 	}
+	if fits, over := r.room(hostPort); !fits {
+		r.mu.Unlock()
+		r.sayOver(over)
+		return
+	}
 	r.refused[hostPort] = true
 	r.mu.Unlock()
 	entry := refusalEntry(r.now(), hostPort)
@@ -70,6 +78,11 @@ func (r *Recording) RecordLocalRefusal(hostPort string) {
 	key := "local " + hostPort
 	if r.refused[key] {
 		r.mu.Unlock()
+		return
+	}
+	if fits, over := r.room(key); !fits {
+		r.mu.Unlock()
+		r.sayOver(over)
 		return
 	}
 	r.refused[key] = true
@@ -154,4 +167,57 @@ func (r *Recording) Seen() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.recorded
+}
+
+// WhenBounded names who hears, once, that one of the capture's bounds was met (limits.go) — for the console.
+func (r *Recording) WhenBounded(heard func(string)) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.bounded = heard
+	r.mu.Unlock()
+}
+
+// remembering is how many refusing hosts the capture remembers, and who hears when that is met.
+func (r *Recording) remembering() (int, func(string)) {
+	if r == nil {
+		return MaxRememberedHosts, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.bound > 0 {
+		return r.bound, r.bounded
+	}
+	return MaxRememberedHosts, r.bounded
+}
+
+// room says whether one more refusing host fits. Past the bound, the first time, over is the entry that says so, for the
+// caller to write once it has let go of mu. Called with mu held.
+func (r *Recording) room(key string) (fits bool, over *harEntry) {
+	bound := r.bound
+	if bound <= 0 {
+		bound = MaxRememberedHosts
+	}
+	if len(key) <= maxAuthorityChars+len("local ") && len(r.refused) < bound {
+		return true, nil
+	}
+	if len(r.refused) >= bound && !r.saidOver {
+		r.saidOver = true
+		entry := refusalEntry(r.now(), "")
+		entry.Response.Error = RememberedEnough(bound)
+		return false, &entry
+	}
+	return false, nil
+}
+
+// sayOver writes the entry room gave, and tells whoever hears it.
+func (r *Recording) sayOver(over *harEntry) {
+	if over == nil {
+		return
+	}
+	r.write(*over, func() harEntry { return *over })
+	if r.bounded != nil {
+		r.bounded(over.Response.Error)
+	}
 }

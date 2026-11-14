@@ -12,6 +12,9 @@ import (
 //
 // AMENDED: the queue hands out per lane (next) since one machine's phones stopped waiting for each other; two requests of
 // one session share its lane, and the rule is unchanged.
+// AMENDED (ANOTHER_ACCOUNT_AND_LIMITS): next hands out the queued request — its frame, and when it reached the agent
+// (limits.go) — so the frame's id is item.frame.ID. WAS: next handed out the frame alone, and the id was frame.ID. The
+// rule is unchanged.
 func TestARequestQueuedWhenTheTunnelEndedIsNeverHandedOut(t *testing.T) {
 	queue := newRequestQueue(MaxQueuedRequests, MaxQueuedBytes)
 	first := requestFrame{ID: "11111111-0000-0000-0000-000000000001", Method: "GET", Path: "/session/s1/source"}
@@ -21,12 +24,12 @@ func TestARequestQueuedWhenTheTunnelEndedIsNeverHandedOut(t *testing.T) {
 		t.Fatal("the first request of a lane starts its worker")
 	}
 	life, end := context.WithCancel(context.Background())
-	if frame, ok := queue.next(life, key); !ok || frame.ID != first.ID {
-		t.Fatalf("a live tunnel's queue hands out in order: %v %v", frame.ID, ok)
+	if item, ok := queue.next(life, key); !ok || item.frame.ID != first.ID {
+		t.Fatalf("a live tunnel's queue hands out in order: %v %v", item.frame.ID, ok)
 	}
 	end()
-	if frame, ok := queue.next(life, key); ok {
-		t.Fatalf("the tunnel ended and the queue still handed out %s, which the farm had already failed", frame.ID)
+	if item, ok := queue.next(life, key); ok {
+		t.Fatalf("the tunnel ended and the queue still handed out %s, which the farm had already failed", item.frame.ID)
 	}
 	if queue.open() != 0 || queue.waiting != 0 || queue.bytes != 0 {
 		t.Fatalf("an ended tunnel's lane must be gone and count nothing: %d lane(s), %d waiting, %d bytes", queue.open(), queue.waiting, queue.bytes)

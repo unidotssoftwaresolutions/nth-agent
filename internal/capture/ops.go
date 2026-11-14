@@ -30,7 +30,7 @@ func Enable(st Store, machineName, agentVersion string, now time.Time, goos stri
 	} else if err := netcap.RemoveCA(st.CADir()); err != nil {
 		return nil, err
 	}
-	if err := ownFolder(st.Root); err != nil {
+	if err := ownLocalFolder(st.Root); err != nil { // on this machine's own disk, too (local.go)
 		return nil, err
 	}
 	// OUT OF BACKUPS BEFORE THE KEY EXISTS (backup.go): a folder that cannot be kept out gets no key.

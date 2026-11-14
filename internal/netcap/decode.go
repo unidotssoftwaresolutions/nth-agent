@@ -104,7 +104,7 @@ func readOneBody(kept []byte, total int64, contentEncoding, contentType string) 
 	if !readsAsText(decoded, contentType, body.decodedSize == int64(len(decoded))) {
 		return notText()
 	}
-	body.text = previewText(decoded, contentType)
+	body.text = wholeText(decoded, contentType) // masked whole, and only then cut to the preview (har.go, previewOf)
 	return body
 }
 
@@ -290,21 +290,38 @@ func describeSize(decodedSize, wireSize int64) string {
 	return strconv.FormatInt(wireSize, 10) + " bytes on the wire"
 }
 
+// wholeText reads decoded bytes as text, whole: the kept bytes, at most keptBytes (ANOTHER_ACCOUNT_AND_LIMITS). A body is
+// masked whole and only then cut (previewOf): cut first, a credential whose value the cut fell inside was read as an
+// unfinished string and kept in part — the order cut.go states for every other cut.
+func wholeText(decoded []byte, contentType string) string {
+	return readText(decoded, contentType)
+}
+
+// previewOf cuts masked text to the preview on a character's boundary (previewText's cut).
+func previewOf(text string) string { return cutPreview(text) }
+
 // previewText reads decoded bytes as text and cuts them to previewUnits on a character's boundary. A body in ISO-8859-1
 // (Latin-1) is read as Latin-1; anything else as UTF-8. A body that is not UTF-8 never gets here (readsAsText), so the
 // one byte that can still become U+FFFD is a character cut at the kept bound — what the record's JSON would make of it
 // anyway, so the masker sees exactly the text that is written.
 func previewText(decoded []byte, contentType string) string {
-	var text string
+	return cutPreview(readText(decoded, contentType))
+}
+
+// readText reads decoded bytes as text: Latin-1 when the type says so, UTF-8 otherwise.
+func readText(decoded []byte, contentType string) string {
 	if isLatin1(contentType) {
 		runes := make([]rune, len(decoded))
 		for i, b := range decoded {
 			runes[i] = rune(b)
 		}
-		text = string(runes)
-	} else {
-		text = strings.ToValidUTF8(string(decoded), string(utf8.RuneError))
+		return string(runes)
 	}
+	return strings.ToValidUTF8(string(decoded), string(utf8.RuneError))
+}
+
+// cutPreview cuts text to previewUnits on a character's boundary.
+func cutPreview(text string) string {
 	units := 0
 	for i, r := range text {
 		units += utf16.RuneLen(r)

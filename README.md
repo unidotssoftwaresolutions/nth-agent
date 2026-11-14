@@ -181,13 +181,13 @@ HISTORY FILE, which outlives the process, the terminal and the reboot. The secon
 token is never written to disk or into any output either way.
 
 `--farm` must be `https://` unless it is exactly `localhost` (in lower case) or a loopback address such as
-`127.0.0.1`, and a plain-`http` farm is never reached through a proxy. Without the two iOS flags your
+`127.0.0.1`, and a plain-`http` farm is never reached through a proxy, nor sent anything when another account on this machine runs it. Without the two iOS flags your
 iPhones are reported as **attached and not offered**, with the reason — a phone we cannot sign for is a
 phone we will not pretend we can drive.
 
 **Only phones on this machine's USB cable are offered — and the Android emulators running on it.** An emulator
 running here is your own virtual device on your own desk, so it is offered like a phone on the cable: `devices` shows
-it as an `Android emulator`, by its virtual device's name. adb names it `emulator-5554` (its console port on this
+it as an `Android emulator`, by its virtual device's name, once the system says your account holds its two ports. adb names it `emulator-5554` (its console port on this
 machine), and only an adb server on this machine's `127.0.0.1`, run by you, is ever asked. A phone that adb or the Apple
 device daemon reaches over Wi-Fi or the network (`adb connect`, wireless debugging, an iPhone shown on Wi-Fi) is left
 out: `connect` names each one once, with how it is reached, `devices` and `doctor` list them, and the farm is not
@@ -201,15 +201,15 @@ npx {{PACKAGE}}@latest connect … --offer-uncabled-devices
 
 **One `connect` at a time on this machine, for your account.** A second one refuses to start and says to stop the
 first: two would offer the same phones under two identities, and one run's capture could record another's. Joining
-a second workspace means stopping the first `connect` before you start the next.
+a second workspace means stopping the first `connect` before you start the next. And a phone one `connect` offers is not offered by another on this machine, whatever its account or HOME.
 
 **Only programs your account runs.** `--appium` is an address on this machine (`127.0.0.1` or `localhost`). Before
 the agent sends a run there, it asks the system which account runs the program listening on that port — the same
 question the capture proxy asks (*On a machine other people log into*, below) — and it asks the same of adb's
 server and of each phone's screen server. A program another account runs, or one whose account the system will not
-name, is not used, and `connect` and `doctor` say so; root's is used, since root can already read everything of
-yours. The temporary forward to a phone's WebDriverAgent listens on this machine's loopback only, and lets in only
-this agent.
+name, is not used, and `connect` and `doctor` say so; root's is used on Linux and Windows, since root can already read everything of
+yours (not on a Mac, where root's launchd makes the socket any account's own agent asks for). The temporary forward to a phone's WebDriverAgent listens on this machine's loopback only, and lets in only
+this agent; the port declared for an iPhone's WebDriverAgent, and an emulator's two ports, are asked the same question.
 
 **Start Appium on this computer's own address: `appium --address 127.0.0.1`.** Appium asks a client for nothing, and
 started without `--address` it can listen on every address this computer has. Then anything on your network that reaches
@@ -421,7 +421,7 @@ and the masked file waits only until your workspace pulls it, then is deleted �
 
 **The agent never sends the CA's key anywhere and keeps it out of backups, and the CA lasts one year.** To read
 HTTPS, `capture enable` makes one certificate authority for this machine — RSA 2048, named *NthCase agent CA — (this
-machine's name)* — in your user config folder, its key readable by you alone. It signs a short-lived certificate (two
+machine's name)* — in your user config folder, its key readable by you alone and kept on this machine's own disk (capture is not turned on where that folder is on network storage). It signs a short-lived certificate (two
 days, held in memory) for each host a test phone talks to, and nothing else. Only the capture proxy reads the key,
 and nothing sends it anywhere. `npx {{PACKAGE}}@latest doctor` says when the CA ends and, from 30 days before, how to renew
 it.

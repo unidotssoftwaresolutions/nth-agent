@@ -156,7 +156,7 @@ func entryFor(f Flow) harEntry {
 		if body.leftOut != "" {
 			post.Comment = body.leftOut
 		} else {
-			post.Text = maskBodyText(body.text, contentType)
+			post.Text = previewOf(maskBodyText(body.text, contentType))
 		}
 		entry.Request.PostData = post
 	}
@@ -177,7 +177,7 @@ func entryFor(f Flow) harEntry {
 		if body.leftOut != "" {
 			content.Comment = body.leftOut
 		} else {
-			content.Text = maskBodyText(body.text, contentType)
+			content.Text = previewOf(maskBodyText(body.text, contentType))
 		}
 	}
 	entry.Response = harResponse{

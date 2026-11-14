@@ -39,19 +39,25 @@ func listenerUID(at *net.TCPAddr) (int, bool) {
 
 // listenAddresses asks this Linux kernel where each listener on port is bound: /proc/net/tcp and /proc/net/tcp6, both.
 func listenAddresses(port int) ([]net.IP, bool) {
-	var all []net.IP
+	listeners, ok := listenerOwners(port)
+	return addressesOf(listeners), ok
+}
+
+// listenerOwners asks this Linux kernel for every listener on port, and the account that made each.
+func listenerOwners(port int) ([]Listener, bool) {
+	var all []Listener
 	read := false
 	for _, table := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
 		contents, err := os.ReadFile(table)
 		if err != nil {
 			continue // a kernel without IPv6 has no tcp6
 		}
-		addresses, ok := listenAddressesInProcNet(contents, port, binary.NativeEndian)
+		listeners, ok := listenersInProcNet(contents, port, binary.NativeEndian)
 		if !ok {
 			return nil, false
 		}
 		read = true
-		all = append(all, addresses...)
+		all = append(all, listeners...)
 	}
 	return all, read
 }

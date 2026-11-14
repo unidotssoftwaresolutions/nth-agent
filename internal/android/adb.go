@@ -23,6 +23,13 @@ func AdbRunner(ctx context.Context, args ...string) (string, error) {
 	return runAdbAsThisAccount(ctx, nil, args...)
 }
 
+// NewGuardedAdbRunner is AdbRunner with both of the kernel's answers about adb's server replaced (ServerGuard) — A TEST SEAM.
+func NewGuardedAdbRunner(guard ServerGuard) Runner {
+	return func(ctx context.Context, args ...string) (string, error) {
+		return runAdbGuarded(ctx, guard, execAdb, args...)
+	}
+}
+
 // NewAdbRunner is AdbRunner with the kernel's answer about who runs adb's server replaced — A TEST SEAM.
 func NewAdbRunner(owner localconn.Owner) Runner {
 	return func(ctx context.Context, args ...string) (string, error) {
@@ -31,14 +38,22 @@ func NewAdbRunner(owner localconn.Owner) Runner {
 }
 
 func execAdb(ctx context.Context, args ...string) (string, error) {
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
 	cmd := exec.CommandContext(ctx, Program(), args...)
-	out, err := cmd.CombinedOutput()
+	output := NewBoundedOutput(MaxAnswerBytes, stop) // one bound for both streams, as CombinedOutput was one buffer
+	cmd.Stdout, cmd.Stderr = output, output
+	err := cmd.Run()
+	if output.Over() {
+		return "", TooLong()
+	}
+	out := output.String()
 	if err != nil {
-		text := strings.TrimSpace(string(out))
+		text := strings.TrimSpace(out)
 		if text == "" {
 			return "", err
 		}
-		return string(out), fmt.Errorf("%s", text)
+		return out, fmt.Errorf("%s", text)
 	}
-	return string(out), nil
+	return out, nil
 }

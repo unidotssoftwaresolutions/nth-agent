@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/unidotssoftwaresolutions/nth-agent/internal/farm"
+	"github.com/unidotssoftwaresolutions/nth-agent/internal/localconn"
 )
 
 // queuedConn IS THE TUNNEL'S NETWORK CONNECTION WITH A SEND QUEUE IN FRONT OF IT. Everything coder/websocket writes —
@@ -36,7 +37,11 @@ type queuedConn struct {
 	queued  int  // bytes not yet written to the network, the one being written included
 	closed  bool // nothing more is accepted or written
 	stuck   bool // a write passed writeBound and the connection was aborted for it
-	once    sync.Once
+	// ceiling is the most that may wait to be written (MaxSendQueueBytes, limits.go; 0 = none); overfull, that it was passed
+	// and the connection was closed for it.
+	ceiling  int64
+	overfull bool
+	once     sync.Once
 }
 
 func newQueuedConn(raw net.Conn, writeBound time.Duration) *queuedConn {
@@ -54,10 +59,19 @@ func (q *queuedConn) notifyLocked() {
 }
 
 // Write queues a copy of p and returns at once — the whole point. It fails only on a closed connection.
+//
+// PAST ITS CEILING (MaxSendQueueBytes, limits.go) IT TAKES NOTHING MORE: the connection is closed, as a stuck one is, and
+// the tunnel is dialled again.
 func (q *queuedConn) Write(p []byte) (int, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed {
+		return 0, net.ErrClosed
+	}
+	if q.ceiling > 0 && int64(q.queued)+int64(len(p)) > q.ceiling {
+		q.overfull, q.closed, q.chunks = true, true, nil
+		q.notifyLocked()
+		go func() { _ = q.Close() }() // the network connection too; Close takes the lock this write holds
 		return 0, net.ErrClosed
 	}
 	q.chunks = append(q.chunks, append([]byte(nil), p...))
@@ -178,11 +192,15 @@ func (q *queuedConn) Close() error {
 // it makes wrapped in a send queue, handed to made so the tunnel can wait on it. One addition: a farm that takes the
 // connection and never answers the upgrade is given up on after thirty seconds, as a dead one is; before this, that dial
 // waited forever.
-func dialClient(writeBound time.Duration, tlsConfig *tls.Config, made func(*queuedConn)) *http.Client {
+//
+// A farm on this machine's loopback is dialled only when this account runs it (farm.OnLoopbackOnlyThisAccount; owner nil =
+// the kernel's answer), before the upgrade and its token are written.
+func dialClient(writeBound time.Duration, tlsConfig *tls.Config, owner localconn.Owner, made func(*queuedConn)) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	dial := farm.OnLoopbackOnlyThisAccount(dialer.DialContext, owner)
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		raw, err := dialer.DialContext(ctx, network, address)
+		raw, err := dial(ctx, network, address)
 		if err != nil {
 			return nil, err
 		}

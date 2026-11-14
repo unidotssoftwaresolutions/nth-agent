@@ -148,26 +148,26 @@ type Config struct {
 	Builds  BuildShelf // where a build is fetched to, counted and handed to Appium from (builds.go); zero = no folder: every build is refused
 	// TEST SEAMS, each zero = the node's number (liveness.go, stream.go). No flag and no environment variable reaches
 	// any of them; they exist so the seals drive the same code at durations a test can wait for.
-	PingInterval      time.Duration
-	AnswerWithin      time.Duration
-	WriteBound        time.Duration
-	MaxStreams        int
-	StreamIdle        time.Duration
-	PumpHighWater     int
-	ResponseHighWater int
+	PingInterval               time.Duration
+	AnswerWithin               time.Duration
+	WriteBound                 time.Duration
+	MaxStreams                 int
+	StreamIdle, CreateDeadline time.Duration
+	PumpHighWater              int
+	ResponseHighWater          int
 	// The bounds on what the farm can make this agent hold (A_FARM_THE_AGENT_DOES_NOT_TAKE_ON_TRUST), each zero = the
-	// number named beside its constant: one inbound message, one forwarded answer, and the request queue.
-	MaxMessageBytes   int64
-	MaxAnswerBytes    int64
-	MaxQueuedRequests int
-	MaxQueuedBytes    int64
+	// number named beside its constant: one inbound message, one forwarded answer, the request queue, and limits.go's own.
+	MaxMessageBytes                                                  int64
+	MaxAnswerBytes                                                   int64
+	MaxQueuedRequests, MaxForwards, MaxHandbacks, MaxPendingRefusals int
+	MaxQueuedBytes, MaxSendQueueBytes, MaxAnswerBytesInFlight        int64
 	// StreamClient opens a mirror; nil = the loopback-only client. TLSClientConfig is the upgrade's TLS; nil = the
 	// system's. Both are seams for the same reason as the timings above.
 	StreamClient    *http.Client
 	TLSClientConfig *tls.Config
-	// LocalOwner names the account whose program answered a connection to this machine's Appium or a phone's mirror; nil =
-	// the kernel's answer (internal/localconn). A TEST SEAM: no flag or variable reaches it.
-	LocalOwner localconn.Owner
+	// LocalOwner names the account whose program answered a connection to this machine's Appium or a phone's mirror, FarmOwner
+	// a farm's on this machine's loopback; nil = the kernel's answer (internal/localconn). A TEST SEAM: no flag reaches either.
+	LocalOwner, FarmOwner localconn.Owner
 }
 
 // Tunnel runs the connect-serve-reconnect loop and answers "is the drive path up right now".
@@ -209,7 +209,8 @@ type Tunnel struct {
 	saidSessionless            atomic.Bool
 	saidRedirect, saidTooLarge atomic.Bool
 	shelf                      shelfState
-	mirrors                    mirrorSet // which phone each session is on, and its mirrors (mirrors.go)
+	mirrors                    mirrorSet   // which phone each session is on, and its mirrors (mirrors.go)
+	limits                     agentLimits // what this agent holds at once, across every tunnel it has had (limits.go)
 }
 
 func New(cfg Config) *Tunnel {
@@ -367,7 +368,7 @@ func (t *Tunnel) connectAndServe(ctx context.Context, url string, onConnected fu
 	started := time.Now()
 	live := &liveness{since: func() time.Duration { return time.Since(started) }}
 	var queue atomic.Pointer[queuedConn]
-	client := dialClient(t.writeBound(), t.cfg.TLSClientConfig, func(q *queuedConn) { queue.Store(q) })
+	client := dialClient(t.writeBound(), t.cfg.TLSClientConfig, t.cfg.FarmOwner, func(q *queuedConn) { queue.Store(q) })
 	conn, answer, err := websocket.Dial(ctx, url, &websocket.DialOptions{
 		HTTPHeader:     header,
 		HTTPClient:     client,
@@ -392,6 +393,7 @@ func (t *Tunnel) connectAndServe(ctx context.Context, url string, onConnected fu
 	life, end := context.WithCancelCause(ctx)
 	l := &link{t: t, conn: conn, queue: queue.Load(), live: live, life: life, agent: ctx,
 		requests: newRequestQueue(t.maxQueuedRequests(), t.maxQueuedBytes()), streams: map[string]context.CancelCauseFunc{}}
+	l.queue.limitTo(t.maxSendQueueBytes()) // what may wait to be written to the farm (limits.go)
 
 	onConnected()
 	t.connected.Store(true)
@@ -506,6 +508,9 @@ func (l *link) dispatch(data []byte) {
 	if err := json.Unmarshal(data, &head); err != nil {
 		return // a malformed frame is skipped, exactly like the reference
 	}
+	if (head.Kind == "" || head.Kind == "stream-start") && l.idTooLong(head.ID) {
+		return // its answer would echo an id longer than any the farm mints (limits.go)
+	}
 	switch head.Kind {
 	case "":
 		// The request/response family. OFF THIS LOOP, because an Appium command can take minutes and the farm pings this
@@ -516,20 +521,17 @@ func (l *link) dispatch(data []byte) {
 		}
 		// THE FARM'S HANDBACK QUESTION is this machine's to answer, never Appium's — off the worker, as the node answers it.
 		if l.t.cfg.Capture != nil && isCaptureHandback(frame.Path) {
-			go l.answerHandback(frame)
+			l.handback(frame) // …a few at a time (limits.go)
 			return
 		}
 		key, start, refusal := l.requests.push(frame, len(data))
 		if refusal != "" {
-			// ANSWERED AT ONCE, OFF THIS LOOP: the farm hears why rather than waiting out its own bound.
+			// ANSWERED AT ONCE, OFF THIS LOOP: the farm hears why rather than waiting out its own bound — and the answer holds
+			// the frame's id, never the frame (limits.go).
 			if l.t.saidQueueFull.CompareAndSwap(false, true) {
 				l.t.say("the farm sent more requests than this agent keeps waiting (" + refusal + ") — each one past that is answered at once with a 503, and nothing of it is sent on\n")
 			}
-			go func() {
-				if l.queue.WaitBelow(l.life, l.t.responseHighWater()) == nil {
-					_ = l.send(answerInWords(frame.ID, http.StatusServiceUnavailable, "Relay forward error: this agent already has "+refusal+", so this request was not queued; nothing of it was sent on"))
-				}
-			}()
+			l.refuse(frame.ID, http.StatusServiceUnavailable, "Relay forward error: this agent already has "+refusal+", so this request was not queued; nothing of it was sent on")
 			return
 		}
 		if start {
@@ -564,15 +566,16 @@ func (l *link) dispatch(data []byte) {
 func (l *link) serveLane(key laneKey) {
 	defer l.t.lanes.Add(-1)
 	for {
-		frame, ok := l.requests.next(l.life, key)
+		item, ok := l.requests.next(l.life, key)
 		if !ok {
 			return
 		}
-		response := l.t.forward(l.agent, frame)
+		response, answer, done := l.forwardWithinTheLimits(item) // the forward, under this agent's limits (limits.go)
 		// Appium's answers wait only for a full queue — never behind a slow viewer's chunks, which wait for far less.
-		if l.life.Err() == nil && l.queue.WaitBelow(l.life, l.t.responseHighWater()) == nil {
+		if answer && l.life.Err() == nil && l.queue.WaitBelow(l.life, l.t.responseHighWater()) == nil {
 			_ = l.send(response)
 		}
+		done()
 	}
 }
 
@@ -583,6 +586,9 @@ func (l *link) send(frame any) error {
 	payload, err := json.Marshal(frame)
 	if err != nil {
 		return err
+	}
+	if int64(len(payload)) > l.t.maxMessageBytes() {
+		return l.tooLargeToSend(frame, len(payload)) // never written: the farm would end the tunnel (limits.go)
 	}
 	l.sendMu.Lock()
 	defer l.sendMu.Unlock()
@@ -641,6 +647,8 @@ func (l *link) howItEnded(err error, agent context.Context) string {
 		return fmt.Sprintf("found dead: the farm did not answer this agent's ping within %s", l.t.answerWithin())
 	case l.queue.Stuck():
 		return fmt.Sprintf("a frame could not be written to the farm within %s", l.t.writeBound())
+	case l.queue.Overfull():
+		return overfullSentence(l.t.maxSendQueueBytes())
 	case agent.Err() != nil:
 		return "this agent is stopping"
 	case websocket.CloseStatus(err) != -1:
@@ -708,8 +716,8 @@ type requestQueue struct {
 type lane struct{ items []queuedRequest }
 
 type queuedRequest struct {
-	frame requestFrame
-	size  int64
+	frame         requestFrame
+	size, arrived int64 // its message's bytes; when it reached this agent, in Unix nanoseconds (limits.go)
 }
 
 func newRequestQueue(maxItems int, maxBytes int64) *requestQueue {
@@ -732,7 +740,7 @@ func (q *requestQueue) push(frame requestFrame, size int) (key laneKey, start bo
 		l = &lane{}
 		q.lanes[key] = l
 	}
-	l.items = append(l.items, queuedRequest{frame: frame, size: int64(size)})
+	l.items = append(l.items, queuedRequest{frame: frame, size: int64(size), arrived: time.Now().UnixNano()})
 	q.waiting++
 	q.bytes += int64(size)
 	return key, !found, ""
@@ -740,7 +748,7 @@ func (q *requestQueue) push(frame requestFrame, size int) (key laneKey, start bo
 
 // next hands a lane's worker that lane's next request, in arrival order. With none waiting — or with the tunnel ended —
 // the lane is removed and the worker told to end.
-func (q *requestQueue) next(ctx context.Context, key laneKey) (requestFrame, bool) {
+func (q *requestQueue) next(ctx context.Context, key laneKey) (queuedRequest, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	l := q.lanes[key]
@@ -754,14 +762,14 @@ func (q *requestQueue) next(ctx context.Context, key laneKey) (requestFrame, boo
 			}
 		}
 		delete(q.lanes, key)
-		return requestFrame{}, false
+		return queuedRequest{}, false
 	}
 	item := l.items[0]
 	l.items[0] = queuedRequest{}
 	l.items = l.items[1:]
 	q.waiting--
 	q.bytes -= item.size
-	return item.frame, true
+	return item, true
 }
 
 // open is how many lanes this queue holds — for the seals.
@@ -1076,7 +1084,7 @@ func (t *Tunnel) forward(ctx context.Context, frame requestFrame) (answer respon
 	// THE ANSWER IS READ UP TO WHAT ONE TUNNEL MESSAGE CARRIES, never past it: a bounded read never learns the full
 	// size, so the sentence names the bound the answer passed.
 	limit := t.maxAnswerBytes()
-	payload, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	payload, err := io.ReadAll(charged(ctx, io.LimitReader(response.Body, limit+1))) // …and counted against every answer held (limits.go)
 	if err != nil {
 		return errorResponse(frame.ID, "Relay forward error: "+err.Error())
 	}
@@ -1149,6 +1157,9 @@ func (t *Tunnel) withoutTheKey(answer responseFrame) responseFrame {
 		return errorResponse(answer.ID, "Relay forward error: the hub's answer could not be checked for the access key, so it was not relayed")
 	}
 	scrubbed := browserstack.ScrubAnswer(relayed, t.cfg.BrowserStack)
+	if int64(len(scrubbed)) > t.maxAnswerBytes() {
+		return t.scrubbedTooLarge(answer.ID, len(scrubbed)) // the mask can be longer than what it replaces (limits.go)
+	}
 	if !bytes.Equal(scrubbed, relayed) {
 		encoded := base64.StdEncoding.EncodeToString(scrubbed)
 		answer.BodyBase64 = &encoded

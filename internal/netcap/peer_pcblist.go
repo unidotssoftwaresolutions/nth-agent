@@ -122,10 +122,17 @@ const (
 // and IPv6, the wildcard included (0.0.0.0, or :: for a listener on every address of both). found is false when the answer
 // is not the list these offsets describe.
 func listenAddressesInPCBList(list []byte, port int) ([]net.IP, bool) {
+	listeners, ok := listenersInPCBList(list, port)
+	return addressesOf(listeners), ok
+}
+
+// listenersInPCBList is every LISTENING TCP socket on port in a pcblist64 answer, with the account that made it
+// (ANOTHER_ACCOUNT_AND_LIMITS).
+func listenersInPCBList(list []byte, port int) ([]Listener, bool) {
 	if len(list) < xinpgenLength {
 		return nil, false
 	}
-	var addresses []net.IP
+	var listeners []Listener
 	position := int(binary.LittleEndian.Uint32(list[0:4]))
 	for position+4 <= len(list) {
 		length := int(binary.LittleEndian.Uint32(list[position+pcbLength : position+pcbLength+4]))
@@ -143,12 +150,13 @@ func listenAddressesInPCBList(list []byte, port int) ([]net.IP, bool) {
 			int(binary.BigEndian.Uint16(record[pcbLport:])) != port {
 			continue
 		}
+		uid := int(binary.LittleEndian.Uint32(record[pcbUID:]))
 		switch {
 		case record[pcbVflag]&inpIPv6 != 0:
-			addresses = append(addresses, net.IP(append([]byte(nil), record[pcbLaddr6:pcbLaddr6+16]...)))
+			listeners = append(listeners, Listener{IP: net.IP(append([]byte(nil), record[pcbLaddr6:pcbLaddr6+16]...)), UID: uid, Known: true})
 		case record[pcbVflag]&inpIPv4 != 0:
-			addresses = append(addresses, net.IP(append([]byte(nil), record[pcbLaddr4:pcbLaddr4+4]...)))
+			listeners = append(listeners, Listener{IP: net.IP(append([]byte(nil), record[pcbLaddr4:pcbLaddr4+4]...)), UID: uid, Known: true})
 		}
 	}
-	return addresses, true
+	return listeners, true
 }

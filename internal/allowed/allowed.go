@@ -132,6 +132,7 @@ var byName = func() map[string]Capability {
 type Phones struct {
 	mu    sync.Mutex
 	udids map[string]bool
+	held  func(udid string, wdaPort int) string
 }
 
 // Offering is a set that offers exactly these phones.
@@ -149,6 +150,14 @@ func (p *Phones) Offer(udids []string) {
 	}
 	p.mu.Lock()
 	p.udids = set
+	p.mu.Unlock()
+}
+
+// OfferHeld replaces what is on offer, with the question asked of each phone as a session is started on it (iphones.go).
+func (p *Phones) OfferHeld(udids []string, held func(udid string, wdaPort int) string) {
+	p.Offer(udids)
+	p.mu.Lock()
+	p.held = held
 	p.mu.Unlock()
 }
 
@@ -316,7 +325,7 @@ func judgeSet(set map[string]any, farmURL string, phones *Phones, own func(strin
 		return "the farm asked to start a session that names no phone (appium:udid) in one of its sets of capabilities, " +
 			"so Appium would pick a phone itself, perhaps one this agent does not offer — " + nothingSent
 	}
-	return ""
+	return phones.askHeld(set)
 }
 
 func judgeValue(key string, c Capability, value any, farmURL string, phones *Phones, own func(string) bool) string {

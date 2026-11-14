@@ -10,14 +10,23 @@ import (
 // ── Windows: THE OWNER OF A TCP SOCKET, FROM GetExtendedTcpTable ────────────────────────────────────────────────────
 //
 // Windows keeps no account on a socket. It keeps the PROCESS that owns it: GetExtendedTcpTable with
-// TCP_TABLE_OWNER_PID_ALL answers a MIB_TCPTABLE_OWNER_PID, a count (a DWORD) and then one MIB_TCPROW_OWNER_PID per IPv4
-// TCP socket, six DWORDs each: state, local address, local port, remote address, remote port, owning process id. The
-// addresses are in network order as they lie in memory, and each port is the low two bytes of its DWORD, in network
-// order. The process's account is then the user of its token (OpenProcess, OpenProcessToken, GetTokenUser).
+// TCP_TABLE_OWNER_MODULE_ALL answers a MIB_TCPTABLE_OWNER_MODULE, a count (a DWORD, then four bytes of padding) and
+// then one MIB_TCPROW_OWNER_MODULE per IPv4 TCP socket: six DWORDs (state, local address, local port, remote address,
+// remote port, owning process id), the time the socket was made (liCreateTimestamp, a FILETIME's count), and sixteen
+// ULONGLONGs of module information this reader does not use. The addresses are in network order as they lie in memory,
+// and each port is the low two bytes of its DWORD, in network order. The process's account is then the user of its
+// token (OpenProcess, OpenProcessToken, GetTokenUser).
 //
-// A socket that listens on every address (`::`, both IPv4 and IPv6) is in the IPv6 table only, as are the connections it
-// accepts from IPv4, written as IPv4 addresses mapped into IPv6; so the IPv6 table (MIB_TCP6TABLE_OWNER_PID) is read too.
-// Its rows are an address of 16 bytes, a scope id, a port, the same for the remote end, then the state and the process id.
+// THE PROCESS MUST BE OLDER THAN ITS SOCKET (ANOTHER_ACCOUNT_AND_LIMITS). A socket outlives the process that made it
+// when another process holds a copy of it, and Windows can then give the dead process's id to a new one. The table
+// still names that id, so the account of whatever process holds it NOW would stand for the socket: another account's
+// socket could read as this account's. A process that started after the socket was made did not make it, so its account
+// is no answer. A socket whose time Windows leaves at zero is judged by its process, as before.
+//
+// A socket that listens on every address (`::`, both IPv4 and IPv6) is in the IPv6 table only, as are the connections
+// it accepts from IPv4, written as IPv4 addresses mapped into IPv6; so the IPv6 table (MIB_TCP6TABLE_OWNER_PID) is read
+// too. Its rows are an address of 16 bytes, a scope id, a port, the same for the remote end, then the state, the
+// process id, the time the socket was made and the module information (MIB_TCP6ROW_OWNER_MODULE).
 //
 // Built on every system, so the reading of the tables and the rule below are tested everywhere with tables the test
 // writes; only peer_windows.go asks Windows, and a test there asks it for real.
@@ -32,12 +41,15 @@ import (
 // A process whose account cannot be read (a service of another account, a process that has ended) is no answer, and no
 // answer is refused.
 const (
-	afInet           = 2  // AF_INET
-	afInet6          = 23 // AF_INET6 on Windows
-	tcp6RowLength    = 56 // sizeof(MIB_TCP6ROW_OWNER_PID)
-	tcpRowLength     = 24 // sizeof(MIB_TCPROW_OWNER_PID): six DWORDs
-	tcpStateListen   = 2  // MIB_TCP_STATE_LISTEN
-	tcpStateTimeWait = 11 // MIB_TCP_STATE_TIME_WAIT: kept after its socket is gone, and never an answer
+	afInet           = 2   // AF_INET
+	afInet6          = 23  // AF_INET6 on Windows
+	tableHeader      = 8   // dwNumEntries, then padding: the rows hold a LARGE_INTEGER, so they start on 8 bytes
+	tcp6RowLength    = 192 // sizeof(MIB_TCP6ROW_OWNER_MODULE): 56 bytes as the PID row, the time, 128 of module information
+	tcp6Created      = 56  // liCreateTimestamp in that row
+	tcpRowLength     = 160 // sizeof(MIB_TCPROW_OWNER_MODULE): six DWORDs, the time, 128 of module information
+	tcpCreated       = 24  // liCreateTimestamp in that row
+	tcpStateListen   = 2   // MIB_TCP_STATE_LISTEN
+	tcpStateTimeWait = 11  // MIB_TCP_STATE_TIME_WAIT: kept after its socket is gone, and never an answer
 	localSystemSID   = "S-1-5-18"
 )
 
@@ -47,30 +59,33 @@ type tcpRow struct {
 	local, remote         net.IP
 	localPort, remotePort int
 	pid                   uint32
+	created               uint64 // when the socket was made (a FILETIME's count); 0 = Windows did not say
 }
 
 // tcpOwners is what the rule needs from Windows, behind an interface so a test can be the table and the accounts.
 type tcpOwners interface {
-	// table is GetExtendedTcpTable's answer for family (afInet or afInet6), TCP_TABLE_OWNER_PID_ALL.
+	// table is GetExtendedTcpTable's answer for family (afInet or afInet6), TCP_TABLE_OWNER_MODULE_ALL.
 	table(family int) ([]byte, error)
+	// startOf is when the process pid started (a FILETIME's count, GetProcessTimes).
+	startOf(pid uint32) (uint64, bool)
 	// accountOf is the SID, as a string, of the account the process pid runs as.
 	accountOf(pid uint32) (string, bool)
 	// thisAccount is this process's own SID.
 	thisAccount() (string, bool)
 }
 
-// tcp6Rows reads a MIB_TCP6TABLE_OWNER_PID. A table whose count does not fit what it holds is no table.
+// tcp6Rows reads a MIB_TCP6TABLE_OWNER_MODULE. A table whose count does not fit what it holds is no table.
 func tcp6Rows(table []byte) ([]tcpRow, bool) {
-	if len(table) < 4 {
+	if len(table) < tableHeader {
 		return nil, false
 	}
 	count := int(binary.LittleEndian.Uint32(table[0:4]))
-	if count < 0 || count > (len(table)-4)/tcp6RowLength {
+	if count < 0 || count > (len(table)-tableHeader)/tcp6RowLength {
 		return nil, false
 	}
 	rows := make([]tcpRow, 0, count)
 	for i := 0; i < count; i++ {
-		row := table[4+i*tcp6RowLength : 4+(i+1)*tcp6RowLength]
+		row := table[tableHeader+i*tcp6RowLength : tableHeader+(i+1)*tcp6RowLength]
 		rows = append(rows, tcpRow{
 			local:      net.IP(append([]byte(nil), row[0:16]...)),
 			localPort:  int(binary.BigEndian.Uint16(row[20:22])),
@@ -78,6 +93,7 @@ func tcp6Rows(table []byte) ([]tcpRow, bool) {
 			remotePort: int(binary.BigEndian.Uint16(row[44:46])),
 			state:      binary.LittleEndian.Uint32(row[48:52]),
 			pid:        binary.LittleEndian.Uint32(row[52:56]),
+			created:    binary.LittleEndian.Uint64(row[tcp6Created : tcp6Created+8]),
 		})
 	}
 	return rows, true
@@ -104,18 +120,18 @@ func allRows(owners tcpOwners) ([]tcpRow, bool) {
 	return append(rows, more...), true
 }
 
-// tcpRows reads a MIB_TCPTABLE_OWNER_PID. A table whose count does not fit what it holds is no table.
+// tcpRows reads a MIB_TCPTABLE_OWNER_MODULE. A table whose count does not fit what it holds is no table.
 func tcpRows(table []byte) ([]tcpRow, bool) {
-	if len(table) < 4 {
+	if len(table) < tableHeader {
 		return nil, false
 	}
 	count := int(binary.LittleEndian.Uint32(table[0:4]))
-	if count < 0 || count > (len(table)-4)/tcpRowLength {
+	if count < 0 || count > (len(table)-tableHeader)/tcpRowLength {
 		return nil, false
 	}
 	rows := make([]tcpRow, 0, count)
 	for i := 0; i < count; i++ {
-		row := table[4+i*tcpRowLength : 4+(i+1)*tcpRowLength]
+		row := table[tableHeader+i*tcpRowLength : tableHeader+(i+1)*tcpRowLength]
 		rows = append(rows, tcpRow{
 			state:      binary.LittleEndian.Uint32(row[0:4]),
 			local:      net.IPv4(row[4], row[5], row[6], row[7]).To4(),
@@ -123,6 +139,7 @@ func tcpRows(table []byte) ([]tcpRow, bool) {
 			remote:     net.IPv4(row[12], row[13], row[14], row[15]).To4(),
 			remotePort: int(binary.BigEndian.Uint16(row[16:18])),
 			pid:        binary.LittleEndian.Uint32(row[20:24]),
+			created:    binary.LittleEndian.Uint64(row[tcpCreated : tcpCreated+8]),
 		})
 	}
 	return rows, true
@@ -169,6 +186,12 @@ func uidInTable(owners tcpOwners, matches func(tcpRow) bool) (int, bool) {
 		sid, ok := owners.accountOf(r.pid)
 		if !ok {
 			return 0, false
+		}
+		if r.created != 0 {
+			started, ok := owners.startOf(r.pid)
+			if !ok || started > r.created {
+				return 0, false // the process now holding that id started after the socket was made: not its maker
+			}
 		}
 		uid, ok := uidForAccount(sid, me)
 		if !ok || (found && uid != owner) {
@@ -225,4 +248,28 @@ func listenAddressesInTable(owners tcpOwners, port int) ([]net.IP, bool) {
 		}
 	}
 	return addresses, true
+}
+
+// listenersInTable is every LISTENING socket on port in both tables, each with its account by the rule above (an
+// account that cannot be read, or a process younger than its socket, is not Known).
+func listenersInTable(owners tcpOwners, port int) ([]Listener, bool) {
+	rows, ok := allRows(owners)
+	if !ok {
+		return nil, false
+	}
+	me, known := owners.thisAccount()
+	var listeners []Listener
+	for _, r := range rows {
+		if r.state != tcpStateListen || r.localPort != port {
+			continue
+		}
+		l := Listener{IP: r.local}
+		if sid, ok := owners.accountOf(r.pid); ok && known {
+			if started, ok := owners.startOf(r.pid); r.created == 0 || (ok && started <= r.created) {
+				l.UID, l.Known = uidForAccount(sid, me)
+			}
+		}
+		listeners = append(listeners, l)
+	}
+	return listeners, true
 }
